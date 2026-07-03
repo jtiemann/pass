@@ -1,5 +1,7 @@
 # Pass — a secure family asset vault
 
+[![CI](https://github.com/jtiemann/pass/actions/workflows/ci.yml/badge.svg)](https://github.com/jtiemann/pass/actions/workflows/ci.yml)
+
 **Pass** is a security-first web app for an individual or family to record their
 assets and everything needed to **access, prove ownership of, or sell** them —
 account logins, account numbers, paperwork (deeds, titles, statements), and the
@@ -7,7 +9,12 @@ people who can help (advisors, attorneys, agents).
 
 - **Passkey (WebAuthn) two-factor login** on top of a password, with single-use recovery codes
 - **Encryption at rest** (AES-GCM via Cloak) for credential secrets and uploaded documents
-- **Shared family vault** with **roles** (owner / member / viewer) and an **audit log**
+- **Shared family vault** with **roles** (owner / member / viewer), **email invites**,
+  and an **audit log** of who accessed and changed what
+- **Defense in depth**: rate-limited logins, re-authentication for security-sensitive
+  settings, a strict Content-Security-Policy, and short (7-day) sessions
+- **Backup story**: a [runbook](BACKUP.md) plus `mix pass.export` for a printable
+  emergency kit
 - Built with **Elixir / Phoenix LiveView**, with **Ramda** and **RxJS** in the browser
   (the reveal/copy flow auto-clears secrets and wipes the clipboard)
 
@@ -155,11 +162,13 @@ cd pass
 # 2. Install the JavaScript deps (Ramda, RxJS) — REQUIRED before assets are built
 npm install --prefix assets
 
-# 3. Tell the app your Postgres password (see Environment variables)
-#    Linux/macOS:
-export PASS_DB_PASSWORD=postgres
-#    Windows (PowerShell):    $env:PASS_DB_PASSWORD = "postgres"
-#    Windows (persist):       setx PASS_DB_PASSWORD postgres   (reopen the terminal)
+# 3. Tell the app your Postgres password (see Environment variables).
+#    Easiest: an untracked .env file at the project root —
+echo "PASS_DB_PASSWORD=postgres" > .env
+#    …or a shell variable:
+#    Linux/macOS:              export PASS_DB_PASSWORD=postgres
+#    Windows (PowerShell):     $env:PASS_DB_PASSWORD = "postgres"
+#    Windows (persist):        setx PASS_DB_PASSWORD postgres   (reopen the terminal)
 
 # 4. Fetch Elixir deps, create + migrate the DB, and build assets
 mix setup
@@ -186,6 +195,11 @@ To run inside an interactive shell: `iex -S mix phx.server`.
 | ------------------ | ------------ | ------------------------------------------------------ |
 | `PASS_DB_PASSWORD` | `postgres`   | Password for the local Postgres `postgres` user.       |
 | `PASS_CLOAK_KEY`   | dev-only key | Base64 32-byte encryption key. A **dev-only** default is baked in for local use; override to use your own. |
+
+In development, `PASS_DB_PASSWORD` can also live in an untracked **`.env`** file at
+the project root (`PASS_DB_PASSWORD=yourpassword`) — handy for editors and tools
+that launch the server without your shell profile. A real environment variable
+takes precedence over `.env`.
 
 The dev/test database user is `postgres` on `localhost:5432`. If your setup differs,
 edit `config/dev.exs` / `config/test.exs`.
@@ -217,6 +231,12 @@ edit `config/dev.exs` / `config/test.exs`.
 5. Under **Settings → Manage passkeys**, enroll a **passkey** (Touch ID / Windows Hello /
    a security key) and **generate recovery codes**. Once you have a passkey, every login
    requires it as the second factor.
+6. Invite the rest of the family from **Members** (email + role) — each invitee gets a
+   login link by email (in dev, it lands in `/dev/mailbox`).
+
+> **Re-authentication prompts:** managing passkeys, recovery codes, and member roles
+> requires a login fresher than 10 minutes. Being bounced to the login page there is
+> the security model working, not a bug.
 
 > **Passkeys and HTTPS:** WebAuthn requires a secure context. `localhost` is exempt, so
 > passkeys work in development over HTTP. In production you **must** serve the app over
@@ -278,3 +298,13 @@ in production — not a LAN IP over plain HTTP.
 **Windows: "empty assets are being served" warning.**
 Phoenix can't create symlinks without privileges. Start your terminal **as
 Administrator** once, then run the app.
+
+**Windows: styles stop updating / new UI looks unstyled.**
+The Tailwind CLI can intermittently die with an `EEXIST` error on Windows
+(especially under synced folders like OneDrive), which silently kills the CSS
+watcher. Rebuild manually and restart the server:
+
+```bash
+rm -rf priv/static/assets/css
+mix tailwind pass
+```
