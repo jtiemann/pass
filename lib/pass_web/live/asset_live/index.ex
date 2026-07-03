@@ -148,6 +148,6 @@ defmodule PassWeb.AssetLive.Index do
   defp format_value(%Asset{estimated_value: nil}), do: "—"
 
   defp format_value(%Asset{estimated_value: value, currency: currency}) do
-    "#{currency} #{Decimal.round(value, 2)}"
+    PassWeb.Format.money(value, "#{currency} ")
   end
 end

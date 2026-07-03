@@ -35,40 +35,59 @@ defmodule PassWeb.Layouts do
 
   def app(assigns) do
     ~H"""
-    <header class="navbar px-4 sm:px-6 lg:px-8">
-      <div class="flex-1">
-        <a href="/" class="flex-1 flex w-fit items-center gap-2">
-          <img src={~p"/images/logo.svg"} width="36" />
-          <span class="text-sm font-semibold">v{Application.spec(:phoenix, :vsn)}</span>
+    <header class="sticky top-0 z-40 border-b border-base-300 bg-base-100/90 backdrop-blur">
+      <div class="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6 lg:px-8">
+        <a href="/" class="flex items-center gap-2.5">
+          <img src={~p"/images/logo.svg"} width="28" height="28" alt="" />
+          <span class="font-display text-xl font-semibold tracking-tight">pass</span>
         </a>
-      </div>
-      <div class="flex-none">
-        <ul class="flex flex-column px-1 space-x-4 items-center">
-          <%= if @current_scope && @current_scope.user do %>
-            <li><.link navigate={~p"/assets"} class="btn btn-ghost">Assets</.link></li>
-            <li :if={@current_scope.user.role == :owner}>
-              <.link navigate={~p"/users"} class="btn btn-ghost">Members</.link>
+
+        <nav>
+          <ul class="flex items-center gap-1">
+            <%= if @current_scope && @current_scope.user do %>
+              <li class="hidden md:block">
+                <span
+                  class="inline-block max-w-[18ch] truncate align-middle px-2 text-xs text-base-content/50"
+                  title={@current_scope.user.email}
+                >
+                  {@current_scope.user.email}
+                </span>
+              </li>
+              <li><.link navigate={~p"/assets"} class="btn btn-ghost btn-sm">Assets</.link></li>
+              <li :if={@current_scope.user.role == :owner}>
+                <.link navigate={~p"/users"} class="btn btn-ghost btn-sm">Members</.link>
+              </li>
+              <li :if={@current_scope.user.role == :owner}>
+                <.link navigate={~p"/audit"} class="btn btn-ghost btn-sm">Audit</.link>
+              </li>
+              <li>
+                <.link navigate={~p"/users/settings"} class="btn btn-ghost btn-sm">Settings</.link>
+              </li>
+              <li>
+                <.link
+                  href={~p"/users/log-out"}
+                  method="delete"
+                  class="btn btn-ghost btn-sm text-base-content/60"
+                >
+                  Log out
+                </.link>
+              </li>
+            <% else %>
+              <li><.link navigate={~p"/users/log-in"} class="btn btn-ghost btn-sm">Log in</.link></li>
+              <li>
+                <.link navigate={~p"/users/register"} class="btn btn-primary btn-sm">Sign up</.link>
+              </li>
+            <% end %>
+            <li class="ml-2">
+              <.theme_toggle />
             </li>
-            <li :if={@current_scope.user.role == :owner}>
-              <.link navigate={~p"/audit"} class="btn btn-ghost">Audit</.link>
-            </li>
-            <li><.link navigate={~p"/users/settings"} class="btn btn-ghost">Settings</.link></li>
-            <li>
-              <.link href={~p"/users/log-out"} method="delete" class="btn btn-ghost">Log out</.link>
-            </li>
-          <% else %>
-            <li><.link navigate={~p"/users/log-in"} class="btn btn-ghost">Log in</.link></li>
-            <li><.link navigate={~p"/users/register"} class="btn btn-primary">Sign up</.link></li>
-          <% end %>
-          <li>
-            <.theme_toggle />
-          </li>
-        </ul>
+          </ul>
+        </nav>
       </div>
     </header>
 
-    <main class="px-4 py-20 sm:px-6 lg:px-8">
-      <div class="mx-auto max-w-2xl space-y-4">
+    <main class="px-4 py-10 sm:px-6 sm:py-12 lg:px-8">
+      <div class="mx-auto max-w-3xl space-y-4">
         {render_slot(@inner_block)}
       </div>
     </main>

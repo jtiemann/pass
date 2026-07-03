@@ -85,16 +85,21 @@ defmodule PassWeb.DashboardLive do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="mx-auto max-w-2xl text-center py-16 space-y-6">
-        <h1 class="text-3xl font-bold">Keep your family's assets safe and findable.</h1>
-        <p class="text-base-content/70">
+      <div class="mx-auto max-w-2xl text-center py-14 sm:py-20 space-y-7">
+        <img src={~p"/images/logo.svg"} width="56" height="56" alt="" class="mx-auto" />
+        <h1 class="text-4xl sm:text-5xl font-semibold leading-tight text-balance">
+          Keep your family's assets safe and findable.
+        </h1>
+        <p class="text-lg text-base-content/70 text-pretty">
           Pass is a secure vault for your accounts, paperwork, and the details your family
           would need to access, prove ownership of, or sell what you own — protected by
           passkeys and encrypted at rest.
         </p>
         <div class="flex justify-center gap-3">
-          <.button variant="primary" navigate={~p"/users/register"}>Get started</.button>
-          <.button navigate={~p"/users/log-in"}>Log in</.button>
+          <.link navigate={~p"/users/register"} class="btn btn-primary btn-lg">
+            Get started
+          </.link>
+          <.link navigate={~p"/users/log-in"} class="btn btn-ghost btn-lg">Log in</.link>
         </div>
       </div>
     </Layouts.app>
@@ -106,9 +111,9 @@ defmodule PassWeb.DashboardLive do
 
   defp stat(assigns) do
     ~H"""
-    <div class="rounded-box border border-base-300 p-5">
+    <div class="rounded-box border border-base-300 bg-base-200/40 p-5">
       <div class="text-sm text-base-content/60">{@label}</div>
-      <div class="text-2xl font-semibold mt-1">{@value}</div>
+      <div class="font-display text-3xl font-semibold tracking-tight mt-1">{@value}</div>
     </div>
     """
   end
@@ -135,6 +140,6 @@ defmodule PassWeb.DashboardLive do
 
   defp humanize_action(action), do: action |> String.replace(".", " ") |> String.replace("_", " ")
 
-  defp format_money(%Decimal{} = value), do: "$#{Decimal.round(value, 2)}"
+  defp format_money(%Decimal{} = value), do: PassWeb.Format.money(value)
   defp format_money(_), do: "$0.00"
 end

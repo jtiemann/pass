@@ -53,3 +53,5 @@ Thumbs.db
 # Uploaded documents (encrypted blobs live outside the repo)
 /priv/uploads/
 
+lostpasskey.txt
+
