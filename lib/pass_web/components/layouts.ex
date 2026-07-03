@@ -95,6 +95,7 @@ defmodule PassWeb.Layouts do
     ~H"""
     <%= if @current_scope && @current_scope.user do %>
       <li><.link navigate={~p"/assets"} class="btn btn-ghost btn-sm">Assets</.link></li>
+      <li><.link navigate={~p"/projections"} class="btn btn-ghost btn-sm">Projections</.link></li>
       <li :if={@current_scope.user.role == :owner}>
         <.link navigate={~p"/users"} class="btn btn-ghost btn-sm">Members</.link>
       </li>

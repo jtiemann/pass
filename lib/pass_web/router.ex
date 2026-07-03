@@ -92,6 +92,7 @@ defmodule PassWeb.Router do
       live "/assets/new", AssetLive.Form, :new
       live "/assets/:id", AssetLive.Show, :show
       live "/assets/:id/edit", AssetLive.Form, :edit
+      live "/projections", ProjectionLive, :index
     end
 
     live_session :require_owner,

@@ -2,7 +2,7 @@ defmodule PassWeb.AssetLive.Form do
   use PassWeb, :live_view
 
   alias Pass.Vault
-  alias Pass.Vault.Asset
+  alias Pass.Vault.{Asset, Projection}
   alias Pass.Accounts.Scope
   alias Pass.Audit
 
@@ -42,6 +42,31 @@ defmodule PassWeb.AssetLive.Form do
         </div>
 
         <.input field={@form[:description]} type="textarea" label="Description" />
+
+        <div class="divider">Growth assumptions</div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <.input
+            field={@form[:annual_return_pct]}
+            type="number"
+            label="Expected annual return (%)"
+            step="0.1"
+            placeholder={return_placeholder(@form)}
+          />
+          <.input
+            field={@form[:dividend_yield_pct]}
+            type="number"
+            label="Dividend / income yield (%)"
+            step="0.1"
+            placeholder="0"
+          />
+          <.input field={@form[:dividends_reinvested]} type="checkbox" label="Reinvest dividends" />
+        </div>
+        <p class="text-xs text-base-content/60">
+          Used by <.link navigate={~p"/projections"} class="link">Projections</.link>.
+          Leave the return blank to assume the category's historical default.
+          Estimates only — not financial advice.
+        </p>
 
         <div class="divider">How to access, prove ownership, and sell</div>
 
@@ -157,5 +182,18 @@ defmodule PassWeb.AssetLive.Form do
 
   defp assign_form(socket, changeset) do
     assign(socket, :form, to_form(changeset, as: "asset"))
+  end
+
+  # Placeholder showing the historical default that applies if the return is
+  # left blank, tracking the currently selected category.
+  defp return_placeholder(form) do
+    category =
+      case Phoenix.HTML.Form.input_value(form, :category) do
+        category when is_atom(category) and not is_nil(category) -> category
+        category when is_binary(category) and category != "" -> String.to_existing_atom(category)
+        _ -> :other
+      end
+
+    "#{Projection.default_return(category)} — #{Asset.humanize_category(category)} default"
   end
 end

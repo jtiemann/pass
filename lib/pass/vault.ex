@@ -216,6 +216,11 @@ defmodule Pass.Vault do
             description: asset.description,
             estimated_value: asset.estimated_value && Decimal.to_string(asset.estimated_value),
             currency: asset.currency,
+            annual_return_pct:
+              asset.annual_return_pct && Decimal.to_string(asset.annual_return_pct),
+            dividend_yield_pct:
+              asset.dividend_yield_pct && Decimal.to_string(asset.dividend_yield_pct),
+            dividends_reinvested: asset.dividends_reinvested,
             access_instructions: asset.access_instructions,
             ownership_proof: asset.ownership_proof,
             sale_instructions: asset.sale_instructions,

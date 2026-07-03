@@ -27,6 +27,12 @@ defmodule Pass.Vault.Asset do
     field :ownership_proof, :string
     field :sale_instructions, :string
 
+    # Growth assumptions for projections. Nil return = use the category's
+    # historical default (see Pass.Vault.Projection).
+    field :annual_return_pct, :decimal
+    field :dividend_yield_pct, :decimal
+    field :dividends_reinvested, :boolean, default: true
+
     belongs_to :created_by, Pass.Accounts.User
 
     timestamps(type: :utc_datetime)
@@ -62,10 +68,21 @@ defmodule Pass.Vault.Asset do
       :currency,
       :access_instructions,
       :ownership_proof,
-      :sale_instructions
+      :sale_instructions,
+      :annual_return_pct,
+      :dividend_yield_pct,
+      :dividends_reinvested
     ])
     |> validate_required([:name, :category, :status])
     |> validate_length(:name, max: 200)
     |> validate_number(:estimated_value, greater_than_or_equal_to: 0)
+    |> validate_number(:annual_return_pct,
+      greater_than_or_equal_to: -100,
+      less_than_or_equal_to: 100
+    )
+    |> validate_number(:dividend_yield_pct,
+      greater_than_or_equal_to: 0,
+      less_than_or_equal_to: 100
+    )
   end
 end

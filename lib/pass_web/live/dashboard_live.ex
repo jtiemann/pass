@@ -14,6 +14,9 @@ defmodule PassWeb.DashboardLive do
         Your vault
         <:subtitle>A quick overview of everything you're keeping safe.</:subtitle>
         <:actions>
+          <.button navigate={~p"/projections"}>
+            <.icon name="hero-chart-bar" /> Projections
+          </.button>
           <.button :if={@can_write} variant="primary" navigate={~p"/assets/new"}>
             <.icon name="hero-plus" /> New asset
           </.button>
