@@ -37,6 +37,8 @@ npm-debug.log
 
 # Claude Code local settings
 .claude/settings.local.json
+# Machine-specific dev-server launch config (contains absolute local paths)
+.claude/launch.json
 
 # Local secrets / environment (never commit these)
 .env

@@ -20,8 +20,24 @@ config :pass, Pass.Encryption.Vault,
   ]
 
 # Local dev DB password, read from the environment so no secret is committed.
-# Set PASS_DB_PASSWORD in your shell (defaults to the conventional "postgres").
-db_password = System.get_env("PASS_DB_PASSWORD", "postgres")
+# Set PASS_DB_PASSWORD in your shell, or put it in an untracked .env file at the
+# project root (useful for editors/preview runners that spawn the server without
+# a shell profile). Defaults to the conventional "postgres".
+dotenv =
+  case File.read(Path.expand("../.env", __DIR__)) do
+    {:ok, contents} ->
+      for line <- String.split(contents, ~r/\r?\n/, trim: true),
+          not String.starts_with?(line, "#"),
+          [key, value] <- [String.split(line, "=", parts: 2)],
+          into: %{} do
+        {String.trim(key), String.trim(value)}
+      end
+
+    _ ->
+      %{}
+  end
+
+db_password = System.get_env("PASS_DB_PASSWORD") || dotenv["PASS_DB_PASSWORD"] || "postgres"
 
 config :pass, Pass.Repo,
   username: "postgres",

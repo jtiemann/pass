@@ -4,7 +4,10 @@ defmodule PassWeb.Router do
   import PassWeb.UserAuth
 
   pipeline :browser do
-    plug :accepts, ["html"]
+    # "json" is accepted too so the WebAuthn ceremony's fetch of
+    # /users/passkeys/challenge (Accept: application/json) isn't rejected
+    # with a 406 by content negotiation.
+    plug :accepts, ["html", "json"]
     plug :fetch_session
     plug :fetch_live_flash
     plug :put_root_layout, html: {PassWeb.Layouts, :root}
