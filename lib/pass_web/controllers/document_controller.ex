@@ -6,11 +6,17 @@ defmodule PassWeb.DocumentController do
   """
   use PassWeb, :controller
 
-  alias Pass.Vault
+  alias Pass.{Audit, Vault}
 
   def download(conn, %{"asset_id" => asset_id, "id" => id}) do
     asset = Vault.get_asset!(asset_id)
     document = Vault.get_document!(asset, id)
+
+    Audit.log(conn.assigns.current_scope, "document.downloaded",
+      entity_type: "document",
+      entity_id: document.id,
+      summary: document.filename
+    )
 
     conn
     |> put_resp_content_type(document.content_type || "application/octet-stream")

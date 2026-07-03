@@ -50,6 +50,13 @@ defmodule Pass.AccountsFixtures do
     Scope.for_user(user)
   end
 
+  @doc "Directly sets a user's role (bypasses the last-owner guard for test setup)."
+  def set_role(user, role) do
+    user
+    |> Ecto.Changeset.change(role: role)
+    |> Pass.Repo.update!()
+  end
+
   def set_password(user) do
     {:ok, {user, _expired_tokens}} =
       Accounts.update_user_password(user, %{password: valid_user_password()})

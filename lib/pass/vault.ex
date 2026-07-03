@@ -9,7 +9,7 @@ defmodule Pass.Vault do
   import Ecto.Query, warn: false
 
   alias Pass.Repo
-  alias Pass.Vault.{Asset, Credential, Document}
+  alias Pass.Vault.{Asset, Contact, Credential, Document}
   alias Pass.Accounts.Scope
 
   @topic "assets"
@@ -133,4 +133,33 @@ defmodule Pass.Vault do
 
   @doc "Metadata-only projection of a document, matching `list_documents/1` shape."
   def document_meta(%Document{} = document), do: %{document | data: nil}
+
+  ## Contacts
+
+  @doc "Lists an asset's contacts, alphabetically by name."
+  def list_contacts(%Asset{id: asset_id}) do
+    Repo.all(from c in Contact, where: c.asset_id == ^asset_id, order_by: [asc: c.name])
+  end
+
+  @doc "Fetches one contact scoped to the asset."
+  def get_contact!(%Asset{id: asset_id}, id) do
+    Repo.get_by!(Contact, id: id, asset_id: asset_id)
+  end
+
+  @doc "Builds a changeset for form rendering."
+  def change_contact(%Contact{} = contact, attrs \\ %{}) do
+    Contact.changeset(contact, attrs)
+  end
+
+  @doc "Creates a contact on an asset."
+  def create_contact(%Asset{id: asset_id}, attrs) do
+    %Contact{asset_id: asset_id}
+    |> Contact.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc "Deletes a contact."
+  def delete_contact(%Contact{} = contact) do
+    Repo.delete(contact)
+  end
 end

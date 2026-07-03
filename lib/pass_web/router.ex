@@ -61,6 +61,15 @@ defmodule PassWeb.Router do
       live "/assets/:id/edit", AssetLive.Form, :edit
     end
 
+    live_session :require_owner,
+      on_mount: [
+        {PassWeb.UserAuth, :require_authenticated},
+        {PassWeb.UserAuth, :require_owner}
+      ] do
+      live "/users", UserLive.Admin, :index
+      live "/audit", AuditLive.Index, :index
+    end
+
     post "/users/update-password", UserSessionController, :update_password
 
     # Passkey & recovery-code management

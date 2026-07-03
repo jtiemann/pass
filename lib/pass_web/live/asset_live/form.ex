@@ -3,6 +3,8 @@ defmodule PassWeb.AssetLive.Form do
 
   alias Pass.Vault
   alias Pass.Vault.Asset
+  alias Pass.Accounts.Scope
+  alias Pass.Audit
 
   @impl true
   def render(assigns) do
@@ -73,7 +75,14 @@ defmodule PassWeb.AssetLive.Form do
 
   @impl true
   def mount(params, _session, socket) do
-    {:ok, apply_action(socket, socket.assigns.live_action, params)}
+    if Scope.can?(socket.assigns.current_scope, :write) do
+      {:ok, apply_action(socket, socket.assigns.live_action, params)}
+    else
+      {:ok,
+       socket
+       |> put_flash(:error, "You have view-only access.")
+       |> push_navigate(to: ~p"/assets")}
+    end
   end
 
   defp apply_action(socket, :new, _params) do
@@ -111,6 +120,12 @@ defmodule PassWeb.AssetLive.Form do
   defp save_asset(socket, :new, params) do
     case Vault.create_asset(socket.assigns.current_scope, params) do
       {:ok, asset} ->
+        Audit.log(socket.assigns.current_scope, "asset.created",
+          entity_type: "asset",
+          entity_id: asset.id,
+          summary: asset.name
+        )
+
         {:noreply,
          socket
          |> put_flash(:info, "Asset created.")
@@ -124,6 +139,12 @@ defmodule PassWeb.AssetLive.Form do
   defp save_asset(socket, :edit, params) do
     case Vault.update_asset(socket.assigns.asset, params) do
       {:ok, asset} ->
+        Audit.log(socket.assigns.current_scope, "asset.updated",
+          entity_type: "asset",
+          entity_id: asset.id,
+          summary: asset.name
+        )
+
         {:noreply,
          socket
          |> put_flash(:info, "Asset updated.")

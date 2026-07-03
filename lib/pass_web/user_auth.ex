@@ -230,6 +230,22 @@ defmodule PassWeb.UserAuth do
     end
   end
 
+  def on_mount(:require_owner, _params, session, socket) do
+    socket = mount_current_scope(socket, session)
+    scope = socket.assigns.current_scope
+
+    if scope && scope.user && scope.user.role == :owner do
+      {:cont, socket}
+    else
+      socket =
+        socket
+        |> Phoenix.LiveView.put_flash(:error, "That area is for owners only.")
+        |> Phoenix.LiveView.redirect(to: ~p"/assets")
+
+      {:halt, socket}
+    end
+  end
+
   def on_mount(:require_sudo_mode, _params, session, socket) do
     socket = mount_current_scope(socket, session)
 

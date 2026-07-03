@@ -46,6 +46,12 @@ defmodule PassWeb.Layouts do
         <ul class="flex flex-column px-1 space-x-4 items-center">
           <%= if @current_scope && @current_scope.user do %>
             <li><.link navigate={~p"/assets"} class="btn btn-ghost">Assets</.link></li>
+            <li :if={@current_scope.user.role == :owner}>
+              <.link navigate={~p"/users"} class="btn btn-ghost">Members</.link>
+            </li>
+            <li :if={@current_scope.user.role == :owner}>
+              <.link navigate={~p"/audit"} class="btn btn-ghost">Audit</.link>
+            </li>
             <li><.link navigate={~p"/users/settings"} class="btn btn-ghost">Settings</.link></li>
             <li>
               <.link href={~p"/users/log-out"} method="delete" class="btn btn-ghost">Log out</.link>

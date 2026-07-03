@@ -3,6 +3,8 @@ defmodule PassWeb.AssetLive.Index do
 
   alias Pass.Vault
   alias Pass.Vault.Asset
+  alias Pass.Accounts.Scope
+  alias Pass.Audit
 
   @impl true
   def render(assigns) do
@@ -12,7 +14,7 @@ defmodule PassWeb.AssetLive.Index do
         Assets
         <:subtitle>Everything the family owns, and how to get to it.</:subtitle>
         <:actions>
-          <.button variant="primary" navigate={~p"/assets/new"}>
+          <.button :if={@can_write} variant="primary" navigate={~p"/assets/new"}>
             <.icon name="hero-plus" /> New asset
           </.button>
         </:actions>
@@ -20,7 +22,9 @@ defmodule PassWeb.AssetLive.Index do
 
       <div :if={@empty?} class="rounded-box border border-base-300 p-8 text-center space-y-3">
         <p class="text-base-content/70">No assets yet.</p>
-        <.button variant="primary" navigate={~p"/assets/new"}>Add your first asset</.button>
+        <.button :if={@can_write} variant="primary" navigate={~p"/assets/new"}>
+          Add your first asset
+        </.button>
       </div>
 
       <.table
@@ -52,8 +56,9 @@ defmodule PassWeb.AssetLive.Index do
           <.link navigate={~p"/assets/#{asset}"}>View</.link>
         </:action>
         <:action :let={{id, asset}}>
-          <.link navigate={~p"/assets/#{asset}/edit"}>Edit</.link>
+          <.link :if={@can_write} navigate={~p"/assets/#{asset}/edit"}>Edit</.link>
           <.link
+            :if={@can_write}
             phx-click={JS.push("delete", value: %{id: asset.id}) |> hide("##{id}")}
             data-confirm={"Delete #{asset.name}? This cannot be undone."}
             class="text-error"
@@ -75,6 +80,7 @@ defmodule PassWeb.AssetLive.Index do
     {:ok,
      socket
      |> assign(:page_title, "Assets")
+     |> assign(:can_write, Scope.can?(socket.assigns.current_scope, :write))
      |> assign(:count, length(assets))
      |> assign(:empty?, assets == [])
      |> stream(:assets, assets)}
@@ -82,10 +88,21 @@ defmodule PassWeb.AssetLive.Index do
 
   @impl true
   def handle_event("delete", %{"id" => id}, socket) do
-    asset = Vault.get_asset!(id)
-    {:ok, _} = Vault.delete_asset(asset)
-    # Stream removal + count are handled via the broadcast handler below.
-    {:noreply, socket}
+    if Scope.can?(socket.assigns.current_scope, :write) do
+      asset = Vault.get_asset!(id)
+      {:ok, _} = Vault.delete_asset(asset)
+
+      Audit.log(socket.assigns.current_scope, "asset.deleted",
+        entity_type: "asset",
+        entity_id: asset.id,
+        summary: asset.name
+      )
+
+      # Stream removal + count are handled via the broadcast handler below.
+      {:noreply, socket}
+    else
+      {:noreply, put_flash(socket, :error, "You don't have permission to delete assets.")}
+    end
   end
 
   @impl true

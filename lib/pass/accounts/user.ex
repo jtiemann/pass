@@ -2,6 +2,8 @@ defmodule Pass.Accounts.User do
   use Ecto.Schema
   import Ecto.Changeset
 
+  @roles ~w(owner member viewer)a
+
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
   schema "users" do
@@ -10,8 +12,19 @@ defmodule Pass.Accounts.User do
     field :hashed_password, :string, redact: true
     field :confirmed_at, :utc_datetime
     field :authenticated_at, :utc_datetime, virtual: true
+    field :role, Ecto.Enum, values: @roles, default: :member
 
     timestamps(type: :utc_datetime)
+  end
+
+  @doc "All valid roles."
+  def roles, do: @roles
+
+  @doc "Changeset for changing a user's role (owner-only action, enforced elsewhere)."
+  def role_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:role])
+    |> validate_required([:role])
   end
 
   @doc """

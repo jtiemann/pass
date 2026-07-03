@@ -30,4 +30,20 @@ defmodule Pass.Accounts.Scope do
   end
 
   def for_user(nil), do: nil
+
+  @doc """
+  Authorization check for a scope. Actions:
+
+    * `:read` — view the vault (all roles)
+    * `:write` — create/edit/delete vault entries (owner, member)
+    * `:manage_users` — change roles / manage members (owner only)
+
+  """
+  def can?(%__MODULE__{user: %User{role: role}}, action), do: allowed?(role, action)
+  def can?(_scope, _action), do: false
+
+  defp allowed?(:owner, _action), do: true
+  defp allowed?(:member, action), do: action in [:read, :write]
+  defp allowed?(:viewer, action), do: action == :read
+  defp allowed?(_role, _action), do: false
 end

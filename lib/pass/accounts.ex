@@ -80,9 +80,35 @@ defmodule Pass.Accounts do
 
   """
   def register_user(attrs) do
-    %User{}
+    # The very first user to register becomes the owner; everyone else is a member.
+    role = if Repo.aggregate(User, :count) == 0, do: :owner, else: :member
+
+    %User{role: role}
     |> User.email_changeset(attrs)
     |> Repo.insert()
+  end
+
+  @doc "Lists all users, owners first then by email."
+  def list_users do
+    Repo.all(from u in User, order_by: [asc: u.role, asc: u.email])
+  end
+
+  @doc """
+  Updates a user's role. Guards against removing the last owner so the instance
+  can never be left with no one able to manage users.
+  """
+  def update_user_role(%User{} = user, role) do
+    if user.role == :owner and role != :owner and owner_count() <= 1 do
+      {:error, :last_owner}
+    else
+      user
+      |> User.role_changeset(%{role: role})
+      |> Repo.update()
+    end
+  end
+
+  defp owner_count do
+    Repo.aggregate(from(u in User, where: u.role == :owner), :count)
   end
 
   ## Settings

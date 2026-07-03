@@ -2,6 +2,7 @@ defmodule PassWeb.AssetLiveTest do
   use PassWeb.ConnCase, async: true
 
   import Phoenix.LiveViewTest
+  import Pass.AccountsFixtures
 
   describe "when not logged in" do
     test "the assets page redirects to login", %{conn: conn} do
@@ -157,6 +158,31 @@ defmodule PassWeb.AssetLiveTest do
         ])
 
       assert {:error, [[_ref, :too_large]]} = render_upload(file, "huge.pdf")
+    end
+  end
+
+  describe "as a viewer (read-only)" do
+    setup %{conn: conn} do
+      user = user_fixture() |> set_role(:viewer)
+      %{conn: log_in_user(conn, user)}
+    end
+
+    test "does not see the New asset button", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/assets")
+      refute html =~ "New asset"
+    end
+
+    test "is redirected away from the new-asset form", %{conn: conn} do
+      assert {:error, {:live_redirect, %{to: "/assets"}}} = live(conn, ~p"/assets/new")
+    end
+
+    test "sees no edit/delete controls on an asset", %{conn: conn} do
+      scope = user_scope_fixture()
+      {:ok, asset} = Pass.Vault.create_asset(scope, %{name: "Cabin", category: :real_estate})
+
+      {:ok, _lv, html} = live(conn, ~p"/assets/#{asset}")
+      refute html =~ "Add credential"
+      refute html =~ "Add contact"
     end
   end
 end

@@ -183,4 +183,53 @@ defmodule Pass.VaultTest do
       assert Vault.list_documents(asset) == []
     end
   end
+
+  describe "contacts" do
+    alias Pass.Vault.Contact
+
+    setup do
+      scope = user_scope_fixture()
+      {:ok, asset} = Vault.create_asset(scope, %{name: "Estate", category: :real_estate})
+      %{asset: asset}
+    end
+
+    test "create_contact/2 with valid data", %{asset: asset} do
+      assert {:ok, %Contact{} = contact} =
+               Vault.create_contact(asset, %{
+                 name: "Jane Doe",
+                 relationship: "Attorney",
+                 email: "jane@example.com"
+               })
+
+      assert contact.name == "Jane Doe"
+      assert contact.relationship == "Attorney"
+    end
+
+    test "create_contact/2 requires a name", %{asset: asset} do
+      assert {:error, changeset} = Vault.create_contact(asset, %{name: ""})
+      assert %{name: ["can't be blank"]} = errors_on(changeset)
+    end
+
+    test "create_contact/2 rejects a malformed email", %{asset: asset} do
+      assert {:error, changeset} =
+               Vault.create_contact(asset, %{name: "X", email: "not-an-email"})
+
+      assert %{email: _} = errors_on(changeset)
+    end
+
+    test "list_contacts/1 returns only that asset's contacts", %{asset: asset} do
+      scope = user_scope_fixture()
+      {:ok, other} = Vault.create_asset(scope, %{name: "Other"})
+      {:ok, a} = Vault.create_contact(asset, %{name: "A"})
+      {:ok, _b} = Vault.create_contact(other, %{name: "B"})
+
+      assert Vault.list_contacts(asset) |> Enum.map(& &1.id) == [a.id]
+    end
+
+    test "delete_contact/1 removes it", %{asset: asset} do
+      {:ok, contact} = Vault.create_contact(asset, %{name: "Gone"})
+      assert {:ok, _} = Vault.delete_contact(contact)
+      assert Vault.list_contacts(asset) == []
+    end
+  end
 end
