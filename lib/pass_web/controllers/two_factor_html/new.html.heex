@@ -1,0 +1,76 @@
+<Layouts.app flash={@flash} current_scope={@current_scope}>
+  <div class="mx-auto max-w-sm space-y-6">
+    <div class="text-center">
+      <.header>
+        Two-step verification
+        <:subtitle>Confirm it's you with your passkey to finish signing in.</:subtitle>
+      </.header>
+    </div>
+
+    <div
+      id="two-factor"
+      data-challenge={@challenge}
+      data-rp-id={@rp_id}
+      data-credential-ids={Jason.encode!(@credential_ids)}
+      class="space-y-4"
+    >
+      <p id="two-factor-status" class="text-sm text-center text-base-content/70" role="status">
+        Waiting for your passkey…
+      </p>
+
+      <.form
+        :let={_f}
+        for={%{}}
+        as={:assertion}
+        action={~p"/users/two-factor"}
+        method="post"
+        id="two-factor-form"
+      >
+        <input type="hidden" name="assertion[credential_id]" id="assertion_credential_id" />
+        <input
+          type="hidden"
+          name="assertion[authenticator_data]"
+          id="assertion_authenticator_data"
+        />
+        <input type="hidden" name="assertion[signature]" id="assertion_signature" />
+        <input type="hidden" name="assertion[client_data_json]" id="assertion_client_data_json" />
+      </.form>
+
+      <button type="button" id="two-factor-retry" class="btn btn-primary w-full">
+        Use my passkey <span aria-hidden="true">→</span>
+      </button>
+    </div>
+
+    <div class="divider">or</div>
+
+    <.form
+      :let={_f}
+      for={%{}}
+      as={:recovery}
+      action={~p"/users/two-factor/recovery"}
+      method="post"
+      class="space-y-2"
+    >
+      <label for="recovery_code" class="fieldset-label">Recovery code</label>
+      <input
+        type="text"
+        name="recovery[code]"
+        id="recovery_code"
+        autocomplete="one-time-code"
+        spellcheck="false"
+        placeholder="xxxx-xxxx-xxxx-xxxx"
+        class="input w-full"
+      />
+      <button class="btn btn-soft w-full">Use a recovery code</button>
+      <p :if={@recovery_count == 0} class="text-xs text-error">
+        You have no recovery codes left.
+      </p>
+    </.form>
+
+    <p class="text-center text-sm">
+      <.link href={~p"/users/log-in"} class="text-base-content/70 hover:underline">
+        Cancel and start over
+      </.link>
+    </p>
+  </div>
+</Layouts.app>

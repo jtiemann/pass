@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mix hex.info *)",
+      "Bash(mix hex.outdated *)",
+      "Bash(mix deps.tree *)",
+      "Bash(mix help *)",
+      "Bash(mix phx.routes)",
+      "Bash(where.exe *)"
+    ]
+  }
+}

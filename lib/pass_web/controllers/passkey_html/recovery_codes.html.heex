@@ -1,0 +1,23 @@
+<Layouts.app flash={@flash} current_scope={@current_scope}>
+  <div class="mx-auto max-w-md space-y-6">
+    <.header>
+      Your recovery codes
+      <:subtitle>
+        Save these somewhere safe. Each code works once, and this is the only time they're shown.
+      </:subtitle>
+    </.header>
+
+    <div class="alert alert-warning">
+      <.icon name="hero-exclamation-triangle" class="size-5 shrink-0" />
+      <span>If you lose your passkey and these codes, you may be locked out.</span>
+    </div>
+
+    <ul class="grid grid-cols-2 gap-2 rounded-box border border-base-300 p-4 font-mono text-sm">
+      <li :for={code <- @codes} class="select-all">{code}</li>
+    </ul>
+
+    <.link href={~p"/users/passkeys"} class="btn btn-primary w-full">
+      I've saved my codes
+    </.link>
+  </div>
+</Layouts.app>

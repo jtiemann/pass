@@ -1,0 +1,86 @@
+<Layouts.app flash={@flash} current_scope={@current_scope}>
+  <div class="mx-auto max-w-xl space-y-8">
+    <.header>
+      Passkeys &amp; recovery
+      <:subtitle>
+        Passkeys are your second factor. You'll need one (or a recovery code) every time you log in.
+      </:subtitle>
+    </.header>
+
+    <section class="space-y-4">
+      <h2 class="text-lg font-semibold">Your passkeys</h2>
+
+      <ul :if={@keys != []} class="divide-y divide-base-300 rounded-box border border-base-300">
+        <li :for={key <- @keys} class="flex items-center justify-between gap-4 p-4">
+          <div>
+            <p class="font-medium">{key.label}</p>
+            <p class="text-xs text-base-content/60">
+              added {Calendar.strftime(key.inserted_at, "%Y-%m-%d")} · {last_used(
+                key.last_used_at
+              )}
+            </p>
+          </div>
+          <.form for={%{}} action={~p"/users/passkeys/#{key.id}"} method="post">
+            <input type="hidden" name="_method" value="delete" />
+            <button
+              class="btn btn-sm btn-error btn-soft"
+              data-confirm={"Remove the passkey \"#{key.label}\"?"}
+            >
+              Remove
+            </button>
+          </.form>
+        </li>
+      </ul>
+
+      <p :if={@keys == []} class="text-sm text-base-content/70">
+        You don't have any passkeys yet. Add one to secure your account.
+      </p>
+
+      <div id="passkey-register" class="flex items-end gap-2">
+        <div class="grow">
+          <label for="passkey-label" class="fieldset-label">Name this device</label>
+          <input
+            type="text"
+            id="passkey-label"
+            placeholder="e.g. MacBook Touch ID"
+            class="input w-full"
+          />
+        </div>
+        <button type="button" id="passkey-register-btn" class="btn btn-primary">
+          Add a passkey
+        </button>
+      </div>
+
+      <%!-- Hidden form the JS ceremony submits after navigator.credentials.create() --%>
+      <.form for={%{}} as={:passkey} action={~p"/users/passkeys"} method="post" id="passkey-form">
+        <input type="hidden" name="passkey[label]" id="passkey_label_field" />
+        <input type="hidden" name="passkey[attestation_object]" id="passkey_attestation_object" />
+        <input type="hidden" name="passkey[client_data_json]" id="passkey_client_data_json" />
+      </.form>
+
+      <p id="passkey-status" class="text-sm text-base-content/70" role="status"></p>
+    </section>
+
+    <section class="space-y-4">
+      <h2 class="text-lg font-semibold">Recovery codes</h2>
+      <p class="text-sm text-base-content/70">
+        You have <span class="font-semibold">{@recovery_count}</span>
+        unused recovery code(s). Generating new codes replaces any existing ones.
+      </p>
+      <.form for={%{}} action={~p"/users/recovery-codes"} method="post">
+        <button
+          class="btn btn-soft"
+          data-confirm="Generate a new set of recovery codes? Any existing codes stop working."
+        >
+          Generate recovery codes
+        </button>
+      </.form>
+    </section>
+
+    <p>
+      <.link href={~p"/users/settings"} class="text-sm text-base-content/70 hover:underline">
+        ← Back to settings
+      </.link>
+    </p>
+  </div>
+</Layouts.app>
