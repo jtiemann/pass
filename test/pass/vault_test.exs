@@ -237,6 +237,94 @@ defmodule Pass.VaultTest do
     end
   end
 
+  describe "import" do
+    test "round-trips an export through JSON: wipe, import, everything restored" do
+      scope = user_scope_fixture()
+
+      {:ok, asset} =
+        Vault.create_asset(scope, %{
+          name: "Bank",
+          category: :financial,
+          estimated_value: 100,
+          currency: "USD"
+        })
+
+      {:ok, _} =
+        Vault.create_credential(asset, %{label: "Login", username: "jon", secret: "hunter2"})
+
+      {:ok, _} = Vault.create_contact(asset, %{name: "Jane", relationship: "Advisor"})
+
+      {:ok, _} =
+        Vault.create_document(asset, %{filename: "deed.pdf", byte_size: 5, data: "BYTES"})
+
+      # Serialize exactly the way mix pass.export does, then wipe the vault.
+      json = Vault.export() |> Jason.encode!() |> Jason.decode!()
+      {:ok, _} = Vault.delete_asset(asset)
+      assert Vault.list_assets() == []
+
+      assert {:ok, summary} = Vault.import_data(json)
+      assert summary.imported == 1
+      assert summary.credentials == 1
+      assert summary.contacts == 1
+      assert summary.documents_skipped == 1
+      assert summary.skipped == []
+
+      [restored] = Vault.list_assets()
+      assert restored.name == "Bank"
+      assert restored.category == :financial
+      assert Decimal.equal?(restored.estimated_value, Decimal.new(100))
+
+      # The secret decrypts again — re-encrypted on insert.
+      [credential] = Vault.list_credentials(restored)
+      assert credential.secret == "hunter2"
+
+      [contact] = Vault.list_contacts(restored)
+      assert contact.name == "Jane"
+
+      # Document contents are not restorable from an export.
+      assert Vault.list_documents(restored) == []
+    end
+
+    test "skips assets whose name already exists (safe to re-run)" do
+      scope = user_scope_fixture()
+      {:ok, _} = Vault.create_asset(scope, %{name: "Bank"})
+
+      data = %{
+        "assets" => [
+          %{"name" => "Bank", "credentials" => [%{"label" => "X", "secret" => "no"}]},
+          %{"name" => "Boat", "category" => "vehicle"}
+        ]
+      }
+
+      assert {:ok, summary} = Vault.import_data(data)
+      assert summary.imported == 1
+      assert summary.skipped == ["Bank"]
+      # Nothing was attached to the existing "Bank" asset.
+      [existing] = Enum.filter(Vault.list_assets(), &(&1.name == "Bank"))
+      assert Vault.list_credentials(existing) == []
+    end
+
+    test "rolls back the whole import when any record is invalid" do
+      data = %{
+        "assets" => [
+          %{"name" => "Good asset"},
+          # credential without a label is invalid
+          %{"name" => "Bad asset", "credentials" => [%{"secret" => "x"}]}
+        ]
+      }
+
+      assert {:error, {:invalid_record, "Bad asset", %Ecto.Changeset{}}} =
+               Vault.import_data(data)
+
+      # Atomic: even the valid asset was not imported.
+      assert Vault.list_assets() == []
+    end
+
+    test "rejects files that are not exports" do
+      assert {:error, :invalid_format} = Vault.import_data(%{"nope" => true})
+    end
+  end
+
   describe "contacts" do
     alias Pass.Vault.Contact
 

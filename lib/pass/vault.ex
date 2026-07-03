@@ -253,6 +253,81 @@ defmodule Pass.Vault do
     }
   end
 
+  @doc """
+  Imports a vault export (the decoded JSON produced by `mix pass.export`).
+
+  Runs in a single transaction: any invalid record rolls the whole import back.
+  Assets whose name already exists in the vault are skipped, so re-running an
+  import is safe. Secrets are (re-)encrypted on insert like any other write.
+  Documents appear in exports as metadata only, so they are counted as skipped —
+  restore file contents from a database backup.
+
+  Returns `{:ok, summary}` or `{:error, reason}`.
+  """
+  def import_data(%{"assets" => assets}) when is_list(assets) do
+    Repo.transaction(fn ->
+      existing = MapSet.new(list_assets(), & &1.name)
+
+      initial = %{
+        imported: 0,
+        skipped: [],
+        credentials: 0,
+        contacts: 0,
+        documents_skipped: 0
+      }
+
+      {_names, summary} =
+        Enum.reduce(assets, {existing, initial}, fn entry, {names, acc} ->
+          name = entry["name"]
+
+          if MapSet.member?(names, name) do
+            {names, %{acc | skipped: [name | acc.skipped]}}
+          else
+            asset = insert_imported!(%Asset{}, Asset.changeset(%Asset{}, entry), name)
+
+            credentials =
+              for cred <- entry["credentials"] || [] do
+                insert_imported!(
+                  asset,
+                  Credential.changeset(%Credential{asset_id: asset.id}, cred),
+                  name
+                )
+              end
+
+            contacts =
+              for contact <- entry["contacts"] || [] do
+                insert_imported!(
+                  asset,
+                  Contact.changeset(%Contact{asset_id: asset.id}, contact),
+                  name
+                )
+              end
+
+            acc = %{
+              acc
+              | imported: acc.imported + 1,
+                credentials: acc.credentials + length(credentials),
+                contacts: acc.contacts + length(contacts),
+                documents_skipped: acc.documents_skipped + length(entry["documents"] || [])
+            }
+
+            {MapSet.put(names, name), acc}
+          end
+        end)
+
+      %{summary | skipped: Enum.reverse(summary.skipped)}
+    end)
+  end
+
+  def import_data(_other), do: {:error, :invalid_format}
+
+  defp insert_imported!(_parent, changeset, asset_name) do
+    case Repo.insert(changeset) do
+      {:ok, record} -> record
+      {:error, failed} -> Repo.rollback({:invalid_record, asset_name, failed})
+    end
+  end
+
   @doc "Updates a contact."
   def update_contact(%Contact{} = contact, attrs) do
     contact

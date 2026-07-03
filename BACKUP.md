@@ -66,6 +66,16 @@ copies when you refresh it. Never leave the file on disk or in email.
 Document *files* (deeds, titles…) are not in the export — they're in the DB
 backup — so also keep paper originals of anything truly critical.
 
+An export can also be **imported** into a fresh instance:
+
+```bash
+mix pass.import vault-export.json
+```
+
+The import is atomic (all or nothing), skips assets whose name already exists
+(safe to re-run), and re-encrypts all secrets on insert. Document files are the
+one thing it can't restore — those come from a database backup only.
+
 ## 4. Test your restore (twice a year)
 
 A backup you've never restored is a hope, not a backup.

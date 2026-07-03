@@ -13,8 +13,8 @@ people who can help (advisors, attorneys, agents).
   and an **audit log** of who accessed and changed what
 - **Defense in depth**: rate-limited logins, re-authentication for security-sensitive
   settings, a strict Content-Security-Policy, and short (7-day) sessions
-- **Backup story**: a [runbook](BACKUP.md) plus `mix pass.export` for a printable
-  emergency kit
+- **Backup story**: a [runbook](BACKUP.md) plus `mix pass.export` /
+  `mix pass.import` for a printable, restorable emergency kit
 - Built with **Elixir / Phoenix LiveView**, with **Ramda** and **RxJS** in the browser
   (the reveal/copy flow auto-clears secrets and wipes the clipboard)
 
