@@ -20,7 +20,9 @@ defmodule PassWeb.Router do
   scope "/", PassWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
+    live_session :home, on_mount: [{PassWeb.UserAuth, :mount_current_scope}] do
+      live "/", DashboardLive, :home
+    end
   end
 
   # Other scopes may use custom stacks.

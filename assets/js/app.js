@@ -26,12 +26,13 @@ import {hooks as colocatedHooks} from "phoenix-colocated/pass"
 import topbar from "../vendor/topbar"
 import {initWebAuthn} from "./webauthn.js"
 import {Secrets} from "./secrets.js"
+import {Filter} from "./filter.js"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, Secrets},
+  hooks: {...colocatedHooks, Secrets, Filter},
 })
 
 // Show progress bar on live navigation and form submits

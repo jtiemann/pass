@@ -2,7 +2,6 @@ defmodule Pass.AuditTest do
   use Pass.DataCase, async: true
 
   alias Pass.Audit
-  alias Pass.Accounts.Scope
 
   import Pass.AccountsFixtures
 

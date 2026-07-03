@@ -24,6 +24,36 @@ defmodule Pass.Vault do
     Repo.all(from a in Asset, order_by: [asc: a.name])
   end
 
+  @doc """
+  A summary of the whole vault for the dashboard: totals, a per-category
+  breakdown, and the most recently added assets.
+  """
+  def dashboard_summary do
+    assets = list_assets()
+
+    by_category =
+      assets
+      |> Enum.group_by(& &1.category)
+      |> Enum.map(fn {category, list} ->
+        %{category: category, count: length(list), value: sum_values(list)}
+      end)
+      |> Enum.sort_by(& &1.count, :desc)
+
+    %{
+      total_assets: length(assets),
+      total_value: sum_values(assets),
+      by_category: by_category,
+      recent: assets |> Enum.sort_by(& &1.inserted_at, {:desc, DateTime}) |> Enum.take(5)
+    }
+  end
+
+  defp sum_values(assets) do
+    Enum.reduce(assets, Decimal.new(0), fn
+      %Asset{estimated_value: %Decimal{} = v}, acc -> Decimal.add(acc, v)
+      _asset, acc -> acc
+    end)
+  end
+
   @doc "Fetches an asset by id, raising if missing."
   def get_asset!(id), do: Repo.get!(Asset, id)
 
