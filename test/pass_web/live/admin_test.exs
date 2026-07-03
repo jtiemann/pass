@@ -38,5 +38,32 @@ defmodule PassWeb.UserLive.AdminTest do
       assert html =~ "last owner"
       assert Accounts.get_user!(owner.id).role == :owner
     end
+
+    test "invites a new member with a preset role", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/users")
+
+      html =
+        lv
+        |> form("#invite-form", %{"email" => "aunt.judy@example.com", "role" => "viewer"})
+        |> render_submit()
+
+      assert html =~ "Invitation sent to aunt.judy@example.com"
+      assert html =~ "aunt.judy@example.com"
+
+      invited = Pass.Accounts.get_user_by_email("aunt.judy@example.com")
+      assert invited.role == :viewer
+    end
+
+    test "shows an error when inviting an existing member", %{conn: conn} do
+      existing = user_fixture()
+      {:ok, lv, _html} = live(conn, ~p"/users")
+
+      html =
+        lv
+        |> form("#invite-form", %{"email" => existing.email, "role" => "member"})
+        |> render_submit()
+
+      assert html =~ "Couldn&#39;t invite that address"
+    end
   end
 end

@@ -46,6 +46,33 @@ defmodule Pass.AccountsRolesTest do
     end
   end
 
+  describe "invite_user/3" do
+    test "creates the user with the given role and sends login instructions" do
+      email = unique_user_email()
+
+      assert {:ok, user} =
+               Accounts.invite_user(email, :viewer, &"[TOKEN]#{&1}[TOKEN]")
+
+      assert user.email == email
+      assert user.role == :viewer
+      assert user.confirmed_at == nil
+    end
+
+    test "rejects a duplicate email" do
+      existing = user_fixture()
+
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Accounts.invite_user(existing.email, :member, &"[TOKEN]#{&1}[TOKEN]")
+
+      assert %{email: ["has already been taken"]} = errors_on(changeset)
+    end
+
+    test "rejects an unknown role" do
+      assert {:error, :invalid_role} =
+               Accounts.invite_user(unique_user_email(), :superadmin, &"[TOKEN]#{&1}[TOKEN]")
+    end
+  end
+
   describe "update_user_role/2" do
     test "changes a user's role" do
       owner = user_fixture() |> set_role(:owner)

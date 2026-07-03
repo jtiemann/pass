@@ -94,6 +94,23 @@ defmodule Pass.Accounts do
   end
 
   @doc """
+  Invites a new member: creates the account with the given role and emails a
+  magic-link so they can log in and finish setup themselves.
+  """
+  def invite_user(email, role, magic_link_url_fun)
+      when is_function(magic_link_url_fun, 1) do
+    if role in User.roles() do
+      with {:ok, user} <-
+             %User{role: role} |> User.email_changeset(%{email: email}) |> Repo.insert() do
+        deliver_login_instructions(user, magic_link_url_fun)
+        {:ok, user}
+      end
+    else
+      {:error, :invalid_role}
+    end
+  end
+
+  @doc """
   Updates a user's role. Guards against removing the last owner so the instance
   can never be left with no one able to manage users.
   """

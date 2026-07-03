@@ -25,8 +25,9 @@ defmodule Pass.Vault do
   end
 
   @doc """
-  A summary of the whole vault for the dashboard: totals, a per-category
-  breakdown, and the most recently added assets.
+  A summary of the whole vault for the dashboard: per-currency totals, a
+  per-category breakdown, and the most recently added assets. Values are never
+  summed across currencies — each currency gets its own total.
   """
   def dashboard_summary do
     assets = list_assets()
@@ -35,23 +36,27 @@ defmodule Pass.Vault do
       assets
       |> Enum.group_by(& &1.category)
       |> Enum.map(fn {category, list} ->
-        %{category: category, count: length(list), value: sum_values(list)}
+        %{category: category, count: length(list), totals: totals_by_currency(list)}
       end)
       |> Enum.sort_by(& &1.count, :desc)
 
     %{
       total_assets: length(assets),
-      total_value: sum_values(assets),
+      totals: totals_by_currency(assets),
       by_category: by_category,
       recent: assets |> Enum.sort_by(& &1.inserted_at, {:desc, DateTime}) |> Enum.take(5)
     }
   end
 
-  defp sum_values(assets) do
-    Enum.reduce(assets, Decimal.new(0), fn
-      %Asset{estimated_value: %Decimal{} = v}, acc -> Decimal.add(acc, v)
-      _asset, acc -> acc
+  # [{currency, Decimal sum}] for assets that carry a value, largest first.
+  defp totals_by_currency(assets) do
+    assets
+    |> Enum.filter(&match?(%Decimal{}, &1.estimated_value))
+    |> Enum.group_by(& &1.currency)
+    |> Enum.map(fn {currency, list} ->
+      {currency, Enum.reduce(list, Decimal.new(0), &Decimal.add(&2, &1.estimated_value))}
     end)
+    |> Enum.sort_by(fn {_currency, sum} -> Decimal.to_float(sum) end, :desc)
   end
 
   @doc "Fetches an asset by id, raising if missing."
@@ -186,6 +191,66 @@ defmodule Pass.Vault do
     %Contact{asset_id: asset_id}
     |> Contact.changeset(attrs)
     |> Repo.insert()
+  end
+
+  ## Export
+
+  @doc """
+  Builds a full, DECRYPTED export of the vault as plain maps — used by
+  `mix pass.export` to produce the offline "emergency kit". Document contents
+  are omitted (only metadata); a database backup covers the encrypted blobs.
+
+  Handle the output with care: it contains every secret in the vault.
+  """
+  def export do
+    %{
+      exported_at: DateTime.utc_now() |> DateTime.to_iso8601(),
+      assets:
+        Enum.map(list_assets(), fn asset ->
+          %{
+            name: asset.name,
+            category: asset.category,
+            status: asset.status,
+            institution: asset.institution,
+            location: asset.location,
+            description: asset.description,
+            estimated_value: asset.estimated_value && Decimal.to_string(asset.estimated_value),
+            currency: asset.currency,
+            access_instructions: asset.access_instructions,
+            ownership_proof: asset.ownership_proof,
+            sale_instructions: asset.sale_instructions,
+            credentials:
+              Enum.map(list_credentials(asset), fn credential ->
+                %{
+                  label: credential.label,
+                  username: credential.username,
+                  url: credential.url,
+                  secret: credential.secret,
+                  notes: credential.notes
+                }
+              end),
+            contacts:
+              Enum.map(list_contacts(asset), fn contact ->
+                %{
+                  name: contact.name,
+                  relationship: contact.relationship,
+                  organization: contact.organization,
+                  email: contact.email,
+                  phone: contact.phone,
+                  notes: contact.notes
+                }
+              end),
+            documents:
+              Enum.map(list_documents(asset), fn document ->
+                %{
+                  filename: document.filename,
+                  content_type: document.content_type,
+                  byte_size: document.byte_size
+                }
+              end)
+          }
+        end)
+    }
   end
 
   @doc "Updates a contact."

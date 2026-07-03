@@ -20,6 +20,29 @@ defmodule PassWeb.UserLive.Admin do
         <:subtitle>Manage who can access this vault and what they can do.</:subtitle>
       </.header>
 
+      <section class="mb-6 rounded-box border border-base-300 p-4">
+        <h2 class="font-semibold mb-3">Invite a member</h2>
+        <form id="invite-form" phx-submit="invite" class="flex flex-col sm:flex-row gap-2">
+          <input
+            type="email"
+            name="email"
+            required
+            placeholder="family.member@example.com"
+            class="input input-bordered grow"
+            autocomplete="off"
+          />
+          <select name="role" class="select select-bordered" aria-label="Role">
+            <option :for={role <- User.roles()} value={role} selected={role == :member}>
+              {Phoenix.Naming.humanize(role)}
+            </option>
+          </select>
+          <.button variant="primary" phx-disable-with="Inviting...">Send invite</.button>
+        </form>
+        <p class="mt-2 text-xs text-base-content/60">
+          They'll receive an email link to log in; from Settings they can add a password and passkey.
+        </p>
+      </section>
+
       <div class="rounded-box border border-base-300 divide-y divide-base-300">
         <div :for={user <- @users} class="flex items-center justify-between gap-4 p-4">
           <div class="min-w-0">
@@ -55,6 +78,35 @@ defmodule PassWeb.UserLive.Admin do
   end
 
   @impl true
+  def handle_event("invite", %{"email" => email, "role" => role_param}, socket) do
+    role = Enum.find(User.roles(), :member, &(to_string(&1) == role_param))
+
+    case Accounts.invite_user(email, role, &url(~p"/users/log-in/#{&1}")) do
+      {:ok, user} ->
+        Audit.log(socket.assigns.current_scope, "user.invited",
+          entity_type: "user",
+          entity_id: user.id,
+          summary: "#{user.email} → #{user.role}"
+        )
+
+        {:noreply,
+         socket
+         |> put_flash(:info, "Invitation sent to #{user.email}.")
+         |> load_users()}
+
+      {:error, %Ecto.Changeset{}} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Couldn't invite that address — is it valid and not already a member?"
+         )}
+
+      {:error, :invalid_role} ->
+        {:noreply, put_flash(socket, :error, "That role isn't valid.")}
+    end
+  end
+
   def handle_event("change_role", %{"user_id" => id, "role" => role}, socket) do
     user = Accounts.get_user!(id)
 

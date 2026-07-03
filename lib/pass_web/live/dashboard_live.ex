@@ -22,7 +22,7 @@ defmodule PassWeb.DashboardLive do
 
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <.stat label="Assets" value={@summary.total_assets} />
-        <.stat label="Estimated value" value={format_money(@summary.total_value)} />
+        <.stat label="Estimated value" value={format_totals(@summary.totals)} />
         <.stat label="Categories" value={length(@summary.by_category)} />
       </div>
 
@@ -36,7 +36,7 @@ defmodule PassWeb.DashboardLive do
           >
             <span class="font-medium">{Asset.humanize_category(row.category)}</span>
             <span class="text-sm text-base-content/70">
-              {row.count} · {format_money(row.value)}
+              {row.count}<span :if={row.totals != []}> · {format_totals(row.totals)}</span>
             </span>
           </.link>
         </div>
@@ -140,6 +140,12 @@ defmodule PassWeb.DashboardLive do
 
   defp humanize_action(action), do: action |> String.replace(".", " ") |> String.replace("_", " ")
 
-  defp format_money(%Decimal{} = value), do: PassWeb.Format.money(value)
-  defp format_money(_), do: "$0.00"
+  # One entry per currency; never a blind sum across currencies.
+  defp format_totals([]), do: "—"
+
+  defp format_totals(totals) do
+    Enum.map_join(totals, " · ", fn {currency, sum} ->
+      PassWeb.Format.money(sum, "#{currency} ")
+    end)
+  end
 end

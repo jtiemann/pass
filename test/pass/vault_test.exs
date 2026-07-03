@@ -60,6 +60,28 @@ defmodule Pass.VaultTest do
       assert_received {:created, %Asset{id: id}}
       assert id == asset.id
     end
+
+    test "dashboard_summary/0 totals per currency, never across them", %{scope: scope} do
+      {:ok, _} =
+        Vault.create_asset(scope, %{name: "US House", estimated_value: 100, currency: "USD"})
+
+      {:ok, _} =
+        Vault.create_asset(scope, %{name: "US Car", estimated_value: 50, currency: "USD"})
+
+      {:ok, _} =
+        Vault.create_asset(scope, %{name: "EU Flat", estimated_value: 200, currency: "EUR"})
+
+      {:ok, _} = Vault.create_asset(scope, %{name: "No value"})
+
+      summary = Vault.dashboard_summary()
+
+      assert summary.total_assets == 4
+
+      totals = Map.new(summary.totals)
+      assert Decimal.equal?(totals["USD"], Decimal.new(150))
+      assert Decimal.equal?(totals["EUR"], Decimal.new(200))
+      assert map_size(totals) == 2
+    end
   end
 
   describe "credentials" do
@@ -181,6 +203,37 @@ defmodule Pass.VaultTest do
       {:ok, doc} = Vault.create_document(asset, %{filename: "x", byte_size: 1, data: "y"})
       assert {:ok, _} = Vault.delete_document(doc)
       assert Vault.list_documents(asset) == []
+    end
+  end
+
+  describe "export" do
+    test "includes decrypted credentials and document metadata, but no file bytes" do
+      scope = user_scope_fixture()
+      {:ok, asset} = Vault.create_asset(scope, %{name: "Bank", category: :financial})
+      {:ok, _} = Vault.create_credential(asset, %{label: "Login", secret: "hunter2"})
+      {:ok, _} = Vault.create_contact(asset, %{name: "Jane", relationship: "Advisor"})
+
+      {:ok, _} =
+        Vault.create_document(asset, %{filename: "deed.pdf", byte_size: 9, data: "FILEBYTES"})
+
+      export = Vault.export()
+      assert [exported] = export.assets
+      assert exported.name == "Bank"
+
+      assert [credential] = exported.credentials
+      assert credential.secret == "hunter2"
+
+      assert [contact] = exported.contacts
+      assert contact.name == "Jane"
+
+      assert [document] = exported.documents
+      assert document.filename == "deed.pdf"
+      refute Map.has_key?(document, :data)
+
+      # And the whole thing is JSON-encodable (what mix pass.export prints).
+      json = Jason.encode!(export)
+      assert json =~ "hunter2"
+      refute json =~ "FILEBYTES"
     end
   end
 

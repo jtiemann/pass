@@ -242,6 +242,9 @@ mix compile --warnings-as-errors
 
 ## Production notes
 
+- **Set up backups before putting real data in.** See [BACKUP.md](BACKUP.md) —
+  it covers database dumps, escrowing `PASS_CLOAK_KEY` (losing it makes encrypted
+  data unrecoverable), and the printable emergency kit (`mix pass.export`).
 - Serve over **HTTPS** (required for passkeys).
 - Set all production environment variables (see [Environment variables](#environment-variables)).
 - Build a release with assets:
