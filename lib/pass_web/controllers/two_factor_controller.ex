@@ -8,7 +8,7 @@ defmodule PassWeb.TwoFactorController do
   use PassWeb, :controller
 
   alias Pass.Accounts
-  alias Pass.Accounts.{Passkeys, RecoveryCodes}
+  alias Pass.Accounts.{ChallengeStore, Passkeys, RecoveryCodes}
   alias PassWeb.UserAuth
 
   # Time allowed to complete the second factor after passing the first.
@@ -27,7 +27,7 @@ defmodule PassWeb.TwoFactorController do
       |> Enum.map(&Base.url_encode64(&1.credential_id, padding: false))
 
     conn
-    |> put_session(:wax_auth_challenge, challenge)
+    |> put_session(:wax_auth_ref, ChallengeStore.put(challenge))
     |> render(:new,
       challenge: Base.url_encode64(challenge.bytes, padding: false),
       rp_id: challenge.rp_id,
@@ -39,9 +39,10 @@ defmodule PassWeb.TwoFactorController do
   @doc "Verifies a passkey assertion returned by the browser."
   def create(conn, %{"assertion" => assertion}) do
     user = conn.assigns.pending_user
-    challenge = get_session(conn, :wax_auth_challenge)
 
-    with %Wax.Challenge{} <- challenge,
+    with :ok <- rate_limit(user),
+         {:ok, %Wax.Challenge{} = challenge} <-
+           ChallengeStore.take(get_session(conn, :wax_auth_ref)),
          {:ok, credential_id} <- decode(assertion["credential_id"]),
          {:ok, auth_data} <- decode(assertion["authenticator_data"]),
          {:ok, signature} <- decode(assertion["signature"]),
@@ -50,6 +51,9 @@ defmodule PassWeb.TwoFactorController do
            Passkeys.verify(user, credential_id, auth_data, signature, client_data, challenge) do
       complete_login(conn, user)
     else
+      {:error, :rate_limited} ->
+        rate_limited(conn)
+
       _ ->
         conn
         |> put_flash(:error, "We couldn't verify that passkey. Please try again.")
@@ -61,17 +65,31 @@ defmodule PassWeb.TwoFactorController do
   def recovery(conn, %{"recovery" => %{"code" => code}}) do
     user = conn.assigns.pending_user
 
-    case RecoveryCodes.verify_and_consume(user, code) do
-      {:ok, user} ->
-        conn
-        |> put_flash(:info, "Recovery code accepted. Consider regenerating your codes.")
-        |> complete_login(user)
+    with :ok <- rate_limit(user),
+         {:ok, user} <- RecoveryCodes.verify_and_consume(user, code) do
+      conn
+      |> put_flash(:info, "Recovery code accepted. Consider regenerating your codes.")
+      |> complete_login(user)
+    else
+      {:error, :rate_limited} ->
+        rate_limited(conn)
 
       :error ->
         conn
         |> put_flash(:error, "That recovery code is invalid or has already been used.")
         |> redirect(to: ~p"/users/two-factor")
     end
+  end
+
+  # Second-factor attempts (passkey or recovery code) share one budget per user.
+  defp rate_limit(user) do
+    Pass.RateLimiter.check("2fa:#{user.id}", 10, 300)
+  end
+
+  defp rate_limited(conn) do
+    conn
+    |> put_flash(:error, "Too many attempts. Please wait a few minutes and try again.")
+    |> redirect(to: ~p"/users/two-factor")
   end
 
   defp complete_login(conn, user) do
@@ -82,7 +100,7 @@ defmodule PassWeb.TwoFactorController do
     |> delete_session(:pending_2fa_user_id)
     |> delete_session(:pending_2fa_remember_me)
     |> delete_session(:pending_2fa_at)
-    |> delete_session(:wax_auth_challenge)
+    |> delete_session(:wax_auth_ref)
     |> UserAuth.log_in_user(user, params)
   end
 

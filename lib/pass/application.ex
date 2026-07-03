@@ -11,6 +11,8 @@ defmodule Pass.Application do
       PassWeb.Telemetry,
       Pass.Repo,
       Pass.Encryption.Vault,
+      Pass.Accounts.ChallengeStore,
+      Pass.RateLimiter,
       {DNSCluster, query: Application.get_env(:pass, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Pass.PubSub},
       # Start a worker by calling: Pass.Worker.start_link(arg)

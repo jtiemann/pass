@@ -9,7 +9,7 @@ defmodule PassWeb.UserAuthTest do
   import Pass.AccountsFixtures
 
   @remember_me_cookie "_pass_web_user_remember_me"
-  @remember_me_cookie_max_age 60 * 60 * 24 * 14
+  @remember_me_cookie_max_age 60 * 60 * 24 * 7
 
   setup %{conn: conn} do
     conn =
@@ -190,7 +190,8 @@ defmodule PassWeb.UserAuthTest do
       token = logged_in_conn.cookies[@remember_me_cookie]
       %{value: signed_token} = logged_in_conn.resp_cookies[@remember_me_cookie]
 
-      offset_user_token(token, -10, :day)
+      # Old enough to trigger a reissue (3 days) but still within the 7-day validity.
+      offset_user_token(token, -5, :day)
       {user, _} = Accounts.get_user_by_session_token(token)
 
       conn =

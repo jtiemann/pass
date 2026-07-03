@@ -7,9 +7,10 @@ defmodule PassWeb.UserAuth do
   alias Pass.Accounts
   alias Pass.Accounts.Scope
 
-  # Make the remember me cookie valid for 14 days. This should match
-  # the session validity setting in UserToken.
-  @max_cookie_age_in_days 14
+  # Make the remember me cookie valid for 7 days. This should match
+  # the session validity setting in UserToken. Kept deliberately short:
+  # this app stores the family's most sensitive information.
+  @max_cookie_age_in_days 7
   @remember_me_cookie "_pass_web_user_remember_me"
   @remember_me_options [
     sign: true,
@@ -24,7 +25,7 @@ defmodule PassWeb.UserAuth do
   # it will result in less time before a session token expires for a user to get issued a new
   # token. This can be set to a value greater than `@max_cookie_age_in_days` to disable
   # the reissuing of tokens completely.
-  @session_reissue_age_in_days 7
+  @session_reissue_age_in_days 3
 
   @doc """
   Logs the user in.
@@ -300,4 +301,21 @@ defmodule PassWeb.UserAuth do
   end
 
   defp maybe_store_return_to(conn), do: conn
+
+  @doc """
+  Plug for routes that require a recent authentication (sudo mode), such as
+  passkey management and recovery-code generation. Sends the user back through
+  login to re-authenticate when their session is older than the sudo window.
+  """
+  def require_sudo_mode(conn, _opts) do
+    if Accounts.sudo_mode?(conn.assigns.current_scope.user, -10) do
+      conn
+    else
+      conn
+      |> put_flash(:error, "Please re-authenticate to manage security settings.")
+      |> maybe_store_return_to()
+      |> redirect(to: ~p"/users/log-in")
+      |> halt()
+    end
+  end
 end

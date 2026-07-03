@@ -24,4 +24,21 @@ defmodule PassWeb.PasskeyControllerTest do
       assert redirected_to(conn) =~ "/users/log-in"
     end
   end
+
+  describe "sudo mode" do
+    setup :register_and_log_in_user
+
+    @tag token_authenticated_at: DateTime.add(DateTime.utc_now(:second), -11, :minute)
+    test "passkey management requires a recent authentication", %{conn: conn} do
+      conn = get(conn, ~p"/users/passkeys")
+      assert redirected_to(conn) == ~p"/users/log-in"
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "re-authenticate"
+    end
+
+    test "passkey management is reachable right after logging in", %{conn: conn} do
+      conn = get(conn, ~p"/users/passkeys")
+      assert html_response(conn, 200) =~ "Your passkeys"
+    end
+  end
 end

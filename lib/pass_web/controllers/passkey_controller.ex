@@ -8,7 +8,7 @@ defmodule PassWeb.PasskeyController do
   """
   use PassWeb, :controller
 
-  alias Pass.Accounts.{Passkeys, RecoveryCodes}
+  alias Pass.Accounts.{ChallengeStore, Passkeys, RecoveryCodes}
 
   @doc "Lists the user's passkeys and recovery-code status."
   def index(conn, _params) do
@@ -31,7 +31,7 @@ defmodule PassWeb.PasskeyController do
       |> Enum.map(&%{type: "public-key", id: Base.url_encode64(&1, padding: false)})
 
     conn
-    |> put_session(:wax_reg_challenge, challenge)
+    |> put_session(:wax_reg_ref, ChallengeStore.put(challenge))
     |> json(%{
       challenge: Base.url_encode64(challenge.bytes, padding: false),
       rp: %{id: challenge.rp_id, name: "pass"},
@@ -54,17 +54,17 @@ defmodule PassWeb.PasskeyController do
   @doc "Verifies and stores a newly created passkey."
   def create(conn, %{"passkey" => params}) do
     user = conn.assigns.current_scope.user
-    challenge = get_session(conn, :wax_reg_challenge)
     label = params["label"] |> to_string() |> String.trim()
     label = if label == "", do: "Passkey", else: label
 
-    with %Wax.Challenge{} <- challenge,
+    with {:ok, %Wax.Challenge{} = challenge} <-
+           ChallengeStore.take(get_session(conn, :wax_reg_ref)),
          {:ok, attestation_object} <- decode(params["attestation_object"]),
          {:ok, client_data} <- decode(params["client_data_json"]),
          {:ok, _key} <-
            Passkeys.register_key(user, label, attestation_object, client_data, challenge) do
       conn
-      |> delete_session(:wax_reg_challenge)
+      |> delete_session(:wax_reg_ref)
       |> put_flash(:info, recovery_hint("Passkey added.", user))
       |> redirect(to: ~p"/users/passkeys")
     else

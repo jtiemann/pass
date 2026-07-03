@@ -4,6 +4,9 @@ defmodule PassWeb.UserLive.Admin do
   """
   use PassWeb, :live_view
 
+  # Role changes redefine who can access the vault — require fresh auth.
+  on_mount {PassWeb.UserAuth, :require_sudo_mode}
+
   alias Pass.Accounts
   alias Pass.Accounts.User
   alias Pass.Audit

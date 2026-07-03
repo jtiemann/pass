@@ -13,11 +13,39 @@ defmodule PassWeb.Router do
     plug :put_root_layout, html: {PassWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
+    plug :put_content_security_policy
     plug :fetch_current_scope_for_user
   end
 
   pipeline :api do
     plug :accepts, ["json"]
+  end
+
+  # Recent re-authentication required (passkeys, recovery codes).
+  pipeline :sudo do
+    plug :require_sudo_mode
+  end
+
+  # Content-Security-Policy with a per-request nonce for the one inline script
+  # (the theme bootstrapper in the root layout). Everything else must come from
+  # our own origin; ws:/wss: is needed for the LiveView socket.
+  defp put_content_security_policy(conn, _opts) do
+    nonce = Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false)
+
+    policy =
+      "default-src 'self'; " <>
+        "script-src 'self' 'nonce-#{nonce}'; " <>
+        "style-src 'self' 'unsafe-inline'; " <>
+        "img-src 'self' data:; " <>
+        "connect-src 'self' ws: wss:; " <>
+        "object-src 'none'; " <>
+        "base-uri 'self'; " <>
+        "frame-ancestors 'self'; " <>
+        "form-action 'self'"
+
+    conn
+    |> assign(:csp_nonce, nonce)
+    |> Plug.Conn.put_resp_header("content-security-policy", policy)
   end
 
   scope "/", PassWeb do
@@ -77,14 +105,19 @@ defmodule PassWeb.Router do
 
     post "/users/update-password", UserSessionController, :update_password
 
-    # Passkey & recovery-code management
+    get "/assets/:asset_id/documents/:id/download", DocumentController, :download
+  end
+
+  # Passkey & recovery-code management: second-factor setup can redefine how the
+  # account is protected, so it additionally requires a recent authentication.
+  scope "/", PassWeb do
+    pipe_through [:browser, :require_authenticated_user, :sudo]
+
     get "/users/passkeys", PasskeyController, :index
     get "/users/passkeys/challenge", PasskeyController, :challenge
     post "/users/passkeys", PasskeyController, :create
     delete "/users/passkeys/:id", PasskeyController, :delete
     post "/users/recovery-codes", PasskeyController, :recovery_codes
-
-    get "/assets/:asset_id/documents/:id/download", DocumentController, :download
   end
 
   scope "/", PassWeb do

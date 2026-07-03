@@ -144,4 +144,26 @@ defmodule PassWeb.UserSessionControllerTest do
       assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "Logged out successfully"
     end
   end
+
+  describe "login rate limiting" do
+    test "throttles repeated password attempts for the same email", %{conn: conn, user: user} do
+      user = set_password(user)
+      params = %{"user" => %{"email" => user.email, "password" => "wrong password"}}
+
+      # Exhaust the budget (10 attempts / 5 minutes per ip+email).
+      for _ <- 1..10 do
+        conn = post(conn, ~p"/users/log-in", params)
+        assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Invalid email or password"
+      end
+
+      conn = post(conn, ~p"/users/log-in", params)
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Too many login attempts"
+
+      # Even the CORRECT password is rejected while throttled.
+      good = %{"user" => %{"email" => user.email, "password" => valid_user_password()}}
+      conn = post(conn, ~p"/users/log-in", good)
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Too many login attempts"
+      refute get_session(conn, :user_token)
+    end
+  end
 end
