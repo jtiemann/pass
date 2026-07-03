@@ -60,9 +60,17 @@ defmodule PassWeb.ProjectionLive do
 
       <div :for={{currency, totals} <- @projection.totals} class="mt-6">
         <h2 class="text-lg font-semibold mb-3">{currency}</h2>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class={[
+          "grid grid-cols-1 gap-4",
+          (totals.drawn > 0 && "sm:grid-cols-2 lg:grid-cols-4") || "sm:grid-cols-3"
+        ]}>
           <.stat label="Today" value={money(totals.current, currency)} />
           <.stat label={"In #{@years} #{year_word(@years)}"} value={money(totals.total, currency)} />
+          <.stat
+            :if={totals.drawn > 0}
+            label="Drawn for expenses"
+            value={money(totals.drawn, currency)}
+          />
           <.stat label="Total gain" value={money(totals.gain, currency)} tone={tone(totals.gain)} />
         </div>
       </div>
@@ -77,6 +85,7 @@ defmodule PassWeb.ProjectionLive do
                 <th>Today</th>
                 <th>Return</th>
                 <th>Yield</th>
+                <th>Draw / yr</th>
                 <th>In {@years}y</th>
                 <th>Gain</th>
               </tr>
@@ -107,7 +116,18 @@ defmodule PassWeb.ProjectionLive do
                   </span>
                   <span :if={row.yield_pct == 0.0}>—</span>
                 </td>
-                <td>{money(row.total, row.asset.currency)}</td>
+                <td>
+                  <span :if={draw?(row.asset)}>
+                    {Format.money(row.asset.annual_draw, "#{row.asset.currency} ")}
+                  </span>
+                  <span :if={!draw?(row.asset)}>—</span>
+                </td>
+                <td>
+                  {money(row.total, row.asset.currency)}
+                  <div :if={row.depleted_at} class="text-xs text-error">
+                    depletes in year {row.depleted_at}
+                  </div>
+                </td>
                 <td class={tone_class(row.gain)}>{signed_money(row.gain, row.asset.currency)}</td>
               </tr>
             </tbody>
@@ -171,6 +191,10 @@ defmodule PassWeb.ProjectionLive do
   end
 
   defp quick_horizons, do: @quick_horizons
+
+  defp draw?(asset) do
+    asset.annual_draw != nil and Decimal.compare(asset.annual_draw, 0) == :gt
+  end
 
   defp year_word(1), do: "year"
   defp year_word(_years), do: "years"

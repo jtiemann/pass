@@ -98,6 +98,84 @@ defmodule Pass.Vault.ProjectionTest do
     test "assets without a value are excluded" do
       assert Projection.project_asset(asset(estimated_value: nil), 5) == nil
     end
+
+    test "a yearly draw is withdrawn after growth, and counts toward gains" do
+      # 1,000 @ 10%, draw 50/yr:
+      #   y1: 1,100 - 50 = 1,050
+      #   y2: 1,155 - 50 = 1,105
+      row =
+        Projection.project_asset(
+          asset(
+            estimated_value: Decimal.new(1000),
+            annual_return_pct: Decimal.new(10),
+            annual_draw: Decimal.new(50)
+          ),
+          2
+        )
+
+      assert_in_delta row.future_value, 1105.0, 0.01
+      assert_in_delta row.total_drawn, 100.0, 0.01
+      # Gain counts the drawn cash: 1,105 + 100 - 1,000
+      assert_in_delta row.gain, 205.0, 0.01
+      assert row.depleted_at == nil
+    end
+
+    test "a draw with zero growth just spends the asset down" do
+      row =
+        Projection.project_asset(
+          asset(
+            estimated_value: Decimal.new(1000),
+            annual_return_pct: Decimal.new(0),
+            annual_draw: Decimal.new(100)
+          ),
+          5
+        )
+
+      assert_in_delta row.future_value, 500.0, 0.01
+      assert_in_delta row.total_drawn, 500.0, 0.01
+      assert_in_delta row.gain, 0.0, 0.01
+    end
+
+    test "an unsustainable draw depletes the asset and only takes what's there" do
+      # 1,000 @ 0%, draw 400/yr: y1 -> 600, y2 -> 200, y3 draws the last 200.
+      row =
+        Projection.project_asset(
+          asset(
+            estimated_value: Decimal.new(1000),
+            annual_return_pct: Decimal.new(0),
+            annual_draw: Decimal.new(400)
+          ),
+          5
+        )
+
+      assert row.depleted_at == 3
+      assert_in_delta row.future_value, 0.0, 0.01
+      assert_in_delta row.total_drawn, 1000.0, 0.01
+      assert_in_delta row.gain, 0.0, 0.01
+    end
+
+    test "draws coexist with non-reinvested dividends" do
+      # 1,000 @ 0% + 3% yield paid as cash, draw 100/yr, 2 years:
+      #   y1: dividend 30 on 1,000; value 1,000 - 100 = 900
+      #   y2: dividend 27 on 900;   value 900 - 100 = 800
+      row =
+        Projection.project_asset(
+          asset(
+            estimated_value: Decimal.new(1000),
+            annual_return_pct: Decimal.new(0),
+            dividend_yield_pct: Decimal.new(3),
+            dividends_reinvested: false,
+            annual_draw: Decimal.new(100)
+          ),
+          2
+        )
+
+      assert_in_delta row.future_value, 800.0, 0.01
+      assert_in_delta row.dividends_cash, 57.0, 0.01
+      assert_in_delta row.total_drawn, 200.0, 0.01
+      # gain = 800 + 57 + 200 - 1000
+      assert_in_delta row.gain, 57.0, 0.01
+    end
   end
 
   describe "project_assets/2" do

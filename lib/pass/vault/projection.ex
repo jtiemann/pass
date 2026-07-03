@@ -38,10 +38,21 @@ defmodule Pass.Vault.Projection do
   def default_return(category), do: Map.get(@default_returns, category, 0.0)
 
   @doc """
-  Projects one asset `years` into the future. Returns a map with the current
-  value, projected asset value, accumulated (non-reinvested) dividends, total,
-  gain, the rates that were used, and whether the return was an assumed
-  category default. Returns `nil` for assets without an estimated value.
+  Projects one asset `years` into the future, simulated year by year:
+
+    1. dividends are computed on the year's starting value (kept as cash
+       unless reinvested, in which case they compound with the return)
+    2. the value grows by the return
+    3. the `annual_draw` is withdrawn at the end of the year
+
+  A draw can only take what's there — once the asset is exhausted its value
+  floors at zero and `depleted_at` records the year it ran out.
+
+  Returns a map with the current value, projected asset value, accumulated
+  dividends, total drawn, total remaining, gain (which counts drawn cash and
+  dividends as gains — money you got to use), the rates used, and whether the
+  return was an assumed category default. Returns `nil` for assets without an
+  estimated value.
   """
   def project_asset(%Asset{estimated_value: nil}, _years), do: nil
 
@@ -53,22 +64,14 @@ defmodule Pass.Vault.Projection do
       if assumed?, do: default_return(asset.category), else: to_float(asset.annual_return_pct)
 
     yield_pct = if asset.dividend_yield_pct, do: to_float(asset.dividend_yield_pct), else: 0.0
+    draw = if asset.annual_draw, do: to_float(asset.annual_draw), else: 0.0
 
     r = return_pct / 100
     d = yield_pct / 100
+    reinvested? = asset.dividends_reinvested
 
-    {future_value, dividends_cash} =
-      cond do
-        asset.dividends_reinvested ->
-          {pv * :math.pow(1 + r + d, years), 0.0}
-
-        r == 0.0 ->
-          {pv, pv * d * years}
-
-        true ->
-          # Dividend paid on each year's starting value: pv·d·Σ(1+r)^k
-          {pv * :math.pow(1 + r, years), pv * d * (:math.pow(1 + r, years) - 1) / r}
-      end
+    {future_value, dividends_cash, total_drawn, depleted_at} =
+      simulate(pv, r, d, reinvested?, draw, years)
 
     total = future_value + dividends_cash
 
@@ -77,12 +80,33 @@ defmodule Pass.Vault.Projection do
       current: pv,
       future_value: future_value,
       dividends_cash: dividends_cash,
+      total_drawn: total_drawn,
+      depleted_at: depleted_at,
       total: total,
-      gain: total - pv,
+      gain: total + total_drawn - pv,
       return_pct: return_pct,
       yield_pct: yield_pct,
       assumed?: assumed?
     }
+  end
+
+  defp simulate(pv, r, d, reinvested?, draw, years) do
+    Enum.reduce(1..years//1, {pv, 0.0, 0.0, nil}, fn year, {value, cash, drawn, depleted} ->
+      if value <= 0.0 do
+        {value, cash, drawn, depleted}
+      else
+        cash = if reinvested?, do: cash, else: cash + value * d
+        grown = if reinvested?, do: value * (1 + r + d), else: value * (1 + r)
+
+        draw_taken = min(draw, max(grown, 0.0))
+        remaining = max(grown - draw_taken, 0.0)
+
+        depleted =
+          if remaining == 0.0 and draw > 0.0 and is_nil(depleted), do: year, else: depleted
+
+        {remaining, cash, drawn + draw_taken, depleted}
+      end
+    end)
   end
 
   @doc """
@@ -104,6 +128,7 @@ defmodule Pass.Vault.Projection do
          %{
            current: sum_by(currency_rows, & &1.current),
            total: sum_by(currency_rows, & &1.total),
+           drawn: sum_by(currency_rows, & &1.total_drawn),
            gain: sum_by(currency_rows, & &1.gain)
          }}
       end)

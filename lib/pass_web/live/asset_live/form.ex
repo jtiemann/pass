@@ -61,10 +61,19 @@ defmodule PassWeb.AssetLive.Form do
             placeholder="0"
           />
           <.input field={@form[:dividends_reinvested]} type="checkbox" label="Reinvest dividends" />
+          <.input
+            field={@form[:annual_draw]}
+            type="number"
+            label="Annual draw (withdrawal)"
+            step="0.01"
+            min="0"
+            placeholder="0"
+          />
         </div>
         <p class="text-xs text-base-content/60">
           Used by <.link navigate={~p"/projections"} class="link">Projections</.link>.
-          Leave the return blank to assume the category's historical default.
+          Leave the return blank to assume the category's historical default. The annual
+          draw is withdrawn at the end of each year to cover expenses elsewhere.
           Estimates only — not financial advice.
         </p>
 

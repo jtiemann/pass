@@ -43,6 +43,30 @@ defmodule PassWeb.ProjectionLiveTest do
       assert html =~ "USD 25,937.42"
     end
 
+    test "shows draws, the drawn-for-expenses total, and depletion warnings", %{
+      conn: conn,
+      scope: scope
+    } do
+      # 100,000 at 0% with a 30,000/yr draw depletes in year 4.
+      {:ok, _} =
+        Pass.Vault.create_asset(scope, %{
+          name: "Spending account",
+          category: :financial,
+          estimated_value: 100_000,
+          currency: "USD",
+          annual_return_pct: 0,
+          annual_draw: 30_000
+        })
+
+      {:ok, _lv, html} = live(conn, ~p"/projections")
+
+      assert html =~ "Drawn for expenses"
+      assert html =~ "USD 100,000.00"
+      assert html =~ "depletes in year 4"
+      # Configured draw per year is shown in the table.
+      assert html =~ "USD 30,000.00"
+    end
+
     test "flags category defaults as assumed", %{conn: conn, scope: scope} do
       {:ok, _} =
         Pass.Vault.create_asset(scope, %{

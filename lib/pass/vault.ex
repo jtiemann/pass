@@ -221,6 +221,7 @@ defmodule Pass.Vault do
             dividend_yield_pct:
               asset.dividend_yield_pct && Decimal.to_string(asset.dividend_yield_pct),
             dividends_reinvested: asset.dividends_reinvested,
+            annual_draw: asset.annual_draw && Decimal.to_string(asset.annual_draw),
             access_instructions: asset.access_instructions,
             ownership_proof: asset.ownership_proof,
             sale_instructions: asset.sale_instructions,
