@@ -123,6 +123,83 @@ defmodule PassWeb.AssetLive.Show do
           No credentials stored for this asset yet.
         </p>
       </section>
+
+      <section class="mt-10 space-y-4">
+        <h2 class="text-lg font-semibold">Documents</h2>
+        <p class="text-xs text-base-content/60">
+          Files are encrypted at rest. Downloads require you to be signed in. Max 10&nbsp;MB each.
+        </p>
+
+        <form
+          id="document-form"
+          phx-submit="save_document"
+          phx-change="validate_document"
+          class="rounded-box border border-base-300 p-4 space-y-3"
+        >
+          <.live_file_input upload={@uploads.document} class="file-input file-input-bordered w-full" />
+
+          <div :for={entry <- @uploads.document.entries} class="flex items-center gap-3 text-sm">
+            <span class="truncate">{entry.client_name}</span>
+            <progress value={entry.progress} max="100" class="progress w-32"></progress>
+            <button
+              type="button"
+              class="btn btn-xs"
+              phx-click="cancel_upload"
+              phx-value-ref={entry.ref}
+            >
+              Cancel
+            </button>
+            <span
+              :for={err <- upload_errors(@uploads.document, entry)}
+              class="text-error text-xs"
+            >
+              {error_to_string(err)}
+            </span>
+          </div>
+
+          <p :for={err <- upload_errors(@uploads.document)} class="text-error text-xs">
+            {error_to_string(err)}
+          </p>
+
+          <.button variant="primary" phx-disable-with="Uploading...">Upload document</.button>
+        </form>
+
+        <ul id="documents" phx-update="stream" class="space-y-2">
+          <li
+            :for={{dom_id, document} <- @streams.documents}
+            id={dom_id}
+            class="rounded-box border border-base-300 p-4 flex items-center justify-between gap-4"
+          >
+            <div class="min-w-0">
+              <p class="font-medium truncate">{document.filename}</p>
+              <p class="text-xs text-base-content/60">
+                {document.content_type} · {format_bytes(document.byte_size)}
+              </p>
+            </div>
+            <div class="flex gap-2 flex-none">
+              <.link
+                href={~p"/assets/#{@asset}/documents/#{document.id}/download"}
+                class="btn btn-xs"
+              >
+                Download
+              </.link>
+              <button
+                type="button"
+                class="btn btn-xs btn-error btn-soft"
+                phx-click="delete_document"
+                phx-value-id={document.id}
+                data-confirm={"Delete \"#{document.filename}\"?"}
+              >
+                Delete
+              </button>
+            </div>
+          </li>
+        </ul>
+
+        <p :if={@document_count == 0} class="text-sm text-base-content/60">
+          No documents attached yet.
+        </p>
+      </section>
     </Layouts.app>
     """
   end
@@ -145,6 +222,7 @@ defmodule PassWeb.AssetLive.Show do
     if connected?(socket), do: Vault.subscribe_assets()
     asset = Vault.get_asset!(id)
     credentials = Vault.list_credentials(asset)
+    documents = Vault.list_documents(asset)
 
     {:ok,
      socket
@@ -152,8 +230,15 @@ defmodule PassWeb.AssetLive.Show do
      |> assign(:asset, asset)
      |> assign(:adding?, false)
      |> assign(:credential_count, length(credentials))
+     |> assign(:document_count, length(documents))
      |> assign_new_credential_form()
-     |> stream(:credentials, credentials)}
+     |> stream(:credentials, credentials)
+     |> stream(:documents, documents)
+     |> allow_upload(:document,
+       accept: ~w(.pdf .png .jpg .jpeg .gif .webp .txt .csv .doc .docx .xls .xlsx),
+       max_entries: 1,
+       max_file_size: 10_000_000
+     )}
   end
 
   @impl true
@@ -206,6 +291,50 @@ defmodule PassWeb.AssetLive.Show do
     {:noreply, push_event(socket, "secret:copy", %{id: id, value: credential.secret || ""})}
   end
 
+  def handle_event("validate_document", _params, socket), do: {:noreply, socket}
+
+  def handle_event("cancel_upload", %{"ref" => ref}, socket) do
+    {:noreply, cancel_upload(socket, :document, ref)}
+  end
+
+  def handle_event("save_document", _params, socket) do
+    results =
+      consume_uploaded_entries(socket, :document, fn %{path: path}, entry ->
+        attrs = %{
+          filename: entry.client_name,
+          content_type: entry.client_type,
+          byte_size: entry.client_size,
+          data: File.read!(path)
+        }
+
+        {:ok, Vault.create_document(socket.assigns.asset, attrs)}
+      end)
+
+    socket =
+      Enum.reduce(results, socket, fn
+        {:ok, document}, acc ->
+          acc
+          |> update(:document_count, &(&1 + 1))
+          |> stream_insert(:documents, Vault.document_meta(document))
+          |> put_flash(:info, "Document uploaded.")
+
+        {:error, _changeset}, acc ->
+          put_flash(acc, :error, "A document couldn't be saved.")
+      end)
+
+    {:noreply, socket}
+  end
+
+  def handle_event("delete_document", %{"id" => id}, socket) do
+    document = Vault.get_document!(socket.assigns.asset, id)
+    {:ok, _} = Vault.delete_document(document)
+
+    {:noreply,
+     socket
+     |> update(:document_count, &max(&1 - 1, 0))
+     |> stream_delete(:documents, document)}
+  end
+
   @impl true
   def handle_info({:updated, %Asset{id: id} = asset}, %{assigns: %{asset: %{id: id}}} = socket) do
     {:noreply, assign(socket, :asset, asset)}
@@ -233,4 +362,14 @@ defmodule PassWeb.AssetLive.Show do
   defp format_value(%Asset{estimated_value: value, currency: currency}) do
     "#{currency} #{Decimal.round(value, 2)}"
   end
+
+  defp format_bytes(nil), do: "—"
+  defp format_bytes(bytes) when bytes < 1_024, do: "#{bytes} B"
+  defp format_bytes(bytes) when bytes < 1_048_576, do: "#{Float.round(bytes / 1_024, 1)} KB"
+  defp format_bytes(bytes), do: "#{Float.round(bytes / 1_048_576, 1)} MB"
+
+  defp error_to_string(:too_large), do: "File is too large (max 10 MB)."
+  defp error_to_string(:not_accepted), do: "That file type isn't allowed."
+  defp error_to_string(:too_many_files), do: "Only one file at a time."
+  defp error_to_string(_), do: "Upload failed."
 end

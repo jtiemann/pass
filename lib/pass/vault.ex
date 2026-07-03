@@ -9,7 +9,7 @@ defmodule Pass.Vault do
   import Ecto.Query, warn: false
 
   alias Pass.Repo
-  alias Pass.Vault.{Asset, Credential}
+  alias Pass.Vault.{Asset, Credential, Document}
   alias Pass.Accounts.Scope
 
   @topic "assets"
@@ -97,4 +97,40 @@ defmodule Pass.Vault do
   def delete_credential(%Credential{} = credential) do
     Repo.delete(credential)
   end
+
+  ## Documents
+
+  @doc """
+  Lists an asset's documents as lightweight metadata structs. The encrypted
+  `data` field is intentionally not selected, so no file bytes are decrypted
+  just to render a list.
+  """
+  def list_documents(%Asset{id: asset_id}) do
+    Repo.all(
+      from d in Document,
+        where: d.asset_id == ^asset_id,
+        order_by: [asc: d.inserted_at],
+        select: struct(d, ^Document.meta_fields())
+    )
+  end
+
+  @doc "Fetches one document (including decrypted `data`), scoped to the asset."
+  def get_document!(%Asset{id: asset_id}, id) do
+    Repo.get_by!(Document, id: id, asset_id: asset_id)
+  end
+
+  @doc "Stores a new document (encrypting its contents at rest)."
+  def create_document(%Asset{id: asset_id}, attrs) do
+    %Document{asset_id: asset_id}
+    |> Document.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc "Deletes a document."
+  def delete_document(%Document{} = document) do
+    Repo.delete(document)
+  end
+
+  @doc "Metadata-only projection of a document, matching `list_documents/1` shape."
+  def document_meta(%Document{} = document), do: %{document | data: nil}
 end

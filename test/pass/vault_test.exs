@@ -125,4 +125,62 @@ defmodule Pass.VaultTest do
       assert Vault.list_credentials(asset) == []
     end
   end
+
+  describe "documents" do
+    alias Pass.Vault.Document
+
+    setup do
+      scope = user_scope_fixture()
+      {:ok, asset} = Vault.create_asset(scope, %{name: "House", category: :real_estate})
+      %{scope: scope, asset: asset}
+    end
+
+    test "create_document/2 stores metadata and round-trips the contents", %{asset: asset} do
+      assert {:ok, %Document{} = doc} =
+               Vault.create_document(asset, %{
+                 filename: "deed.pdf",
+                 content_type: "application/pdf",
+                 byte_size: 11,
+                 data: "PDF-CONTENTS"
+               })
+
+      assert doc.filename == "deed.pdf"
+      # get_document! reloads with decrypted data
+      assert Vault.get_document!(asset, doc.id).data == "PDF-CONTENTS"
+    end
+
+    test "file contents are encrypted at rest", %{asset: asset} do
+      {:ok, doc} =
+        Vault.create_document(asset, %{filename: "d.txt", byte_size: 6, data: "secret"})
+
+      %{rows: [[ciphertext]]} =
+        Pass.Repo.query!("SELECT data FROM documents WHERE id = $1", [Ecto.UUID.dump!(doc.id)])
+
+      refute String.contains?(ciphertext, "secret")
+    end
+
+    test "list_documents/1 returns metadata without decrypting file bytes", %{asset: asset} do
+      {:ok, _} = Vault.create_document(asset, %{filename: "a.pdf", byte_size: 3, data: "abc"})
+
+      [meta] = Vault.list_documents(asset)
+      assert meta.filename == "a.pdf"
+      assert meta.byte_size == 3
+      # data field is not selected, so it stays nil in the list projection
+      assert meta.data == nil
+    end
+
+    test "create_document/2 requires filename, byte_size and data", %{asset: asset} do
+      assert {:error, changeset} = Vault.create_document(asset, %{filename: ""})
+      errors = errors_on(changeset)
+      assert errors[:filename]
+      assert errors[:byte_size]
+      assert errors[:data]
+    end
+
+    test "delete_document/1 removes it", %{asset: asset} do
+      {:ok, doc} = Vault.create_document(asset, %{filename: "x", byte_size: 1, data: "y"})
+      assert {:ok, _} = Vault.delete_document(doc)
+      assert Vault.list_documents(asset) == []
+    end
+  end
 end

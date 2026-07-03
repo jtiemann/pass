@@ -69,6 +69,8 @@ defmodule PassWeb.Router do
     post "/users/passkeys", PasskeyController, :create
     delete "/users/passkeys/:id", PasskeyController, :delete
     post "/users/recovery-codes", PasskeyController, :recovery_codes
+
+    get "/assets/:asset_id/documents/:id/download", DocumentController, :download
   end
 
   scope "/", PassWeb do
