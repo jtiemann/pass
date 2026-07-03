@@ -226,6 +226,16 @@ defmodule Pass.VaultTest do
       assert Vault.list_contacts(asset) |> Enum.map(& &1.id) == [a.id]
     end
 
+    test "update_contact/2 changes fields", %{asset: asset} do
+      {:ok, contact} = Vault.create_contact(asset, %{name: "Old Name"})
+
+      assert {:ok, updated} =
+               Vault.update_contact(contact, %{name: "New Name", phone: "555-1234"})
+
+      assert updated.name == "New Name"
+      assert updated.phone == "555-1234"
+    end
+
     test "delete_contact/1 removes it", %{asset: asset} do
       {:ok, contact} = Vault.create_contact(asset, %{name: "Gone"})
       assert {:ok, _} = Vault.delete_contact(contact)

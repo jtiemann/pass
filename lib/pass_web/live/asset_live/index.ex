@@ -28,18 +28,28 @@ defmodule PassWeb.AssetLive.Index do
       </div>
 
       <div :if={!@empty?} id="asset-filter" phx-hook="Filter">
-        <div class="relative mb-4">
-          <.icon
-            name="hero-magnifying-glass"
-            class="size-5 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40"
-          />
-          <input
-            type="text"
-            data-filter-input
-            placeholder="Search by name, institution, category, or location…"
-            class="input input-bordered w-full pl-10"
-            autocomplete="off"
-          />
+        <div class="mb-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div class="relative grow">
+            <.icon
+              name="hero-magnifying-glass"
+              class="size-5 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40"
+            />
+            <input
+              type="text"
+              data-filter-input
+              placeholder="Search by name, institution, category, or location…"
+              class="input input-bordered w-full pl-10"
+              autocomplete="off"
+            />
+          </div>
+          <label class="flex flex-none cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              class="toggle toggle-sm"
+              phx-click="toggle_archived"
+              checked={@show_archived}
+            /> Show archived
+          </label>
         </div>
 
         <ul id="assets" phx-update="stream" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -97,18 +107,19 @@ defmodule PassWeb.AssetLive.Index do
   def mount(_params, _session, socket) do
     if connected?(socket), do: Vault.subscribe_assets()
 
-    assets = Vault.list_assets()
-
     {:ok,
      socket
      |> assign(:page_title, "Assets")
      |> assign(:can_write, Scope.can?(socket.assigns.current_scope, :write))
-     |> assign(:count, length(assets))
-     |> assign(:empty?, assets == [])
-     |> stream(:assets, assets)}
+     |> assign(:show_archived, false)
+     |> refresh_assets()}
   end
 
   @impl true
+  def handle_event("toggle_archived", _params, socket) do
+    {:noreply, socket |> update(:show_archived, &(!&1)) |> refresh_assets()}
+  end
+
   def handle_event("delete", %{"id" => id}, socket) do
     if Scope.can?(socket.assigns.current_scope, :write) do
       asset = Vault.get_asset!(id)
@@ -120,29 +131,34 @@ defmodule PassWeb.AssetLive.Index do
         summary: asset.name
       )
 
-      # Stream removal + count are handled via the broadcast handler below.
+      # Stream removal is handled via the broadcast handler below.
       {:noreply, socket}
     else
       {:noreply, put_flash(socket, :error, "You don't have permission to delete assets.")}
     end
   end
 
+  # Any change to the vault (from this member or another) reloads the visible
+  # list — at family scale, correctness beats incremental bookkeeping.
   @impl true
-  def handle_info({:created, asset}, socket) do
-    {:noreply, socket |> adjust_count(+1) |> stream_insert(:assets, asset, at: 0)}
+  def handle_info({event, _asset}, socket) when event in [:created, :updated, :deleted] do
+    {:noreply, refresh_assets(socket)}
   end
 
-  def handle_info({:updated, asset}, socket) do
-    {:noreply, stream_insert(socket, :assets, asset)}
-  end
+  defp refresh_assets(socket) do
+    all = Vault.list_assets()
 
-  def handle_info({:deleted, asset}, socket) do
-    {:noreply, socket |> adjust_count(-1) |> stream_delete(:assets, asset)}
-  end
+    visible =
+      if socket.assigns.show_archived,
+        do: all,
+        else: Enum.reject(all, &(&1.status == :archived))
 
-  defp adjust_count(socket, delta) do
-    count = max(socket.assigns.count + delta, 0)
-    socket |> assign(:count, count) |> assign(:empty?, count == 0)
+    socket
+    |> assign(:count, length(visible))
+    # "empty" means the vault has nothing at all — if everything is archived,
+    # the list (with its show-archived toggle) must stay visible.
+    |> assign(:empty?, all == [])
+    |> stream(:assets, visible, reset: true)
   end
 
   defp format_value(%Asset{estimated_value: nil}), do: "—"

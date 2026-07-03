@@ -114,6 +114,72 @@ defmodule PassWeb.AssetLiveTest do
       html = render_hook(lv, "delete_credential", %{"id" => credential.id})
       refute html =~ "Temp"
     end
+
+    test "edits a credential, keeping the secret when the field is left blank", %{
+      conn: conn,
+      asset: asset
+    } do
+      {:ok, credential} =
+        Pass.Vault.create_credential(asset, %{
+          label: "Bank login",
+          username: "jon",
+          secret: "keepme"
+        })
+
+      {:ok, lv, _html} = live(conn, ~p"/assets/#{asset}")
+
+      # Opening the edit form must not leak the decrypted secret into the DOM.
+      html = render_hook(lv, "edit_credential", %{"id" => credential.id})
+      assert html =~ "Editing"
+      refute html =~ "keepme"
+
+      html =
+        lv
+        |> form("#credential-form",
+          credential: %{label: "Bank login", username: "jon2", secret: ""}
+        )
+        |> render_submit()
+
+      assert html =~ "Credential updated."
+      assert html =~ "jon2"
+
+      reloaded = Pass.Vault.get_credential!(asset, credential.id)
+      assert reloaded.username == "jon2"
+      assert reloaded.secret == "keepme"
+    end
+
+    test "edits a credential and replaces the secret when one is entered", %{
+      conn: conn,
+      asset: asset
+    } do
+      {:ok, credential} = Pass.Vault.create_credential(asset, %{label: "X", secret: "old"})
+      {:ok, lv, _html} = live(conn, ~p"/assets/#{asset}")
+
+      render_hook(lv, "edit_credential", %{"id" => credential.id})
+
+      lv
+      |> form("#credential-form", credential: %{label: "X", secret: "brand-new"})
+      |> render_submit()
+
+      assert Pass.Vault.get_credential!(asset, credential.id).secret == "brand-new"
+    end
+
+    test "edits a contact", %{conn: conn, asset: asset} do
+      {:ok, contact} = Pass.Vault.create_contact(asset, %{name: "Jane", relationship: "Attorney"})
+      {:ok, lv, _html} = live(conn, ~p"/assets/#{asset}")
+
+      html = render_hook(lv, "edit_contact", %{"id" => contact.id})
+      assert html =~ "Editing"
+
+      html =
+        lv
+        |> form("#contact-form", contact: %{name: "Jane Smith", relationship: "Estate attorney"})
+        |> render_submit()
+
+      assert html =~ "Contact updated."
+      assert html =~ "Jane Smith"
+      assert Pass.Vault.get_contact!(asset, contact.id).name == "Jane Smith"
+    end
   end
 
   describe "documents on the show page" do
@@ -158,6 +224,30 @@ defmodule PassWeb.AssetLiveTest do
         ])
 
       assert {:error, [[_ref, :too_large]]} = render_upload(file, "huge.pdf")
+    end
+  end
+
+  describe "archived assets" do
+    setup :register_and_log_in_user
+
+    setup %{scope: scope} do
+      {:ok, active} = Pass.Vault.create_asset(scope, %{name: "Active Cabin"})
+      {:ok, archived} = Pass.Vault.create_asset(scope, %{name: "Old Boat", status: :archived})
+      %{active: active, archived: archived}
+    end
+
+    test "hides archived assets by default", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/assets")
+      assert html =~ "Active Cabin"
+      refute html =~ "Old Boat"
+    end
+
+    test "the toggle reveals archived assets", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/assets")
+
+      html = render_hook(lv, "toggle_archived", %{})
+      assert html =~ "Active Cabin"
+      assert html =~ "Old Boat"
     end
   end
 

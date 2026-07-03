@@ -38,4 +38,21 @@ defmodule Pass.AuditTest do
     assert "one" in actions
     assert "two" in actions
   end
+
+  test "list_events/2 filters by entity type" do
+    user = user_fixture()
+    {:ok, _} = Audit.log(user, "asset.created", entity_type: "asset", summary: "House")
+    {:ok, _} = Audit.log(user, "credential.revealed", entity_type: "credential", summary: "Bank")
+
+    actions = Audit.list_events(50, "asset") |> Enum.map(& &1.action)
+    assert "asset.created" in actions
+    refute "credential.revealed" in actions
+  end
+
+  test "list_events/2 respects the limit" do
+    user = user_fixture()
+    for i <- 1..5, do: Audit.log(user, "evt.#{i}")
+
+    assert length(Audit.list_events(3)) == 3
+  end
 end

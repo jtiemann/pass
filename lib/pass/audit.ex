@@ -47,8 +47,22 @@ defmodule Pass.Audit do
     _ -> {:error, :audit_failed}
   end
 
-  @doc "Lists the most recent audit events (newest first)."
-  def list_events(limit \\ 200) do
+  @doc """
+  Lists the most recent audit events (newest first), optionally filtered by
+  `entity_type` (e.g. "asset", "credential", "user").
+  """
+  def list_events(limit \\ 200, entity_type \\ nil)
+
+  def list_events(limit, nil) do
     Repo.all(from e in Event, order_by: [desc: e.inserted_at], limit: ^limit)
+  end
+
+  def list_events(limit, entity_type) when is_binary(entity_type) do
+    Repo.all(
+      from e in Event,
+        where: e.entity_type == ^entity_type,
+        order_by: [desc: e.inserted_at],
+        limit: ^limit
+    )
   end
 end

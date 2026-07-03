@@ -188,6 +188,13 @@ defmodule Pass.Vault do
     |> Repo.insert()
   end
 
+  @doc "Updates a contact."
+  def update_contact(%Contact{} = contact, attrs) do
+    contact
+    |> Contact.changeset(attrs)
+    |> Repo.update()
+  end
+
   @doc "Deletes a contact."
   def delete_contact(%Contact{} = contact) do
     Repo.delete(contact)

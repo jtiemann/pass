@@ -42,46 +42,39 @@ defmodule PassWeb.Layouts do
           <span class="font-display text-xl font-semibold tracking-tight">pass</span>
         </a>
 
-        <nav>
-          <ul class="flex items-center gap-1">
-            <%= if @current_scope && @current_scope.user do %>
-              <li class="hidden md:block">
-                <span
-                  class="inline-block max-w-[18ch] truncate align-middle px-2 text-xs text-base-content/50"
-                  title={@current_scope.user.email}
-                >
-                  {@current_scope.user.email}
-                </span>
-              </li>
-              <li><.link navigate={~p"/assets"} class="btn btn-ghost btn-sm">Assets</.link></li>
-              <li :if={@current_scope.user.role == :owner}>
-                <.link navigate={~p"/users"} class="btn btn-ghost btn-sm">Members</.link>
-              </li>
-              <li :if={@current_scope.user.role == :owner}>
-                <.link navigate={~p"/audit"} class="btn btn-ghost btn-sm">Audit</.link>
-              </li>
-              <li>
-                <.link navigate={~p"/users/settings"} class="btn btn-ghost btn-sm">Settings</.link>
-              </li>
-              <li>
-                <.link
-                  href={~p"/users/log-out"}
-                  method="delete"
-                  class="btn btn-ghost btn-sm text-base-content/60"
-                >
-                  Log out
-                </.link>
-              </li>
-            <% else %>
-              <li><.link navigate={~p"/users/log-in"} class="btn btn-ghost btn-sm">Log in</.link></li>
-              <li>
-                <.link navigate={~p"/users/register"} class="btn btn-primary btn-sm">Sign up</.link>
-              </li>
-            <% end %>
-            <li class="ml-2">
-              <.theme_toggle />
+        <nav class="flex items-center gap-1">
+          <%!-- Desktop: full link row (the email chip stays in the DOM for all sizes) --%>
+          <ul class="hidden md:flex items-center gap-1">
+            <li :if={@current_scope && @current_scope.user}>
+              <span
+                class="inline-block max-w-[18ch] truncate align-middle px-2 text-xs text-base-content/50"
+                title={@current_scope.user.email}
+              >
+                {@current_scope.user.email}
+              </span>
             </li>
+            <.nav_items current_scope={@current_scope} />
           </ul>
+
+          <%!-- Mobile: hamburger dropdown with the same links --%>
+          <div class="dropdown dropdown-end md:hidden">
+            <div tabindex="0" role="button" class="btn btn-ghost btn-sm" aria-label="Menu">
+              <.icon name="hero-bars-3" class="size-5" />
+            </div>
+            <ul
+              tabindex="0"
+              class="dropdown-content menu z-50 mt-2 w-52 rounded-box border border-base-300 bg-base-100 p-2 shadow-lg"
+            >
+              <li :if={@current_scope && @current_scope.user} class="menu-title truncate">
+                {@current_scope.user.email}
+              </li>
+              <.nav_items current_scope={@current_scope} />
+            </ul>
+          </div>
+
+          <div class="ml-2">
+            <.theme_toggle />
+          </div>
         </nav>
       </div>
     </header>
@@ -93,6 +86,39 @@ defmodule PassWeb.Layouts do
     </main>
 
     <.flash_group flash={@flash} />
+    """
+  end
+
+  attr :current_scope, :map, default: nil
+
+  defp nav_items(assigns) do
+    ~H"""
+    <%= if @current_scope && @current_scope.user do %>
+      <li><.link navigate={~p"/assets"} class="btn btn-ghost btn-sm">Assets</.link></li>
+      <li :if={@current_scope.user.role == :owner}>
+        <.link navigate={~p"/users"} class="btn btn-ghost btn-sm">Members</.link>
+      </li>
+      <li :if={@current_scope.user.role == :owner}>
+        <.link navigate={~p"/audit"} class="btn btn-ghost btn-sm">Audit</.link>
+      </li>
+      <li>
+        <.link navigate={~p"/users/settings"} class="btn btn-ghost btn-sm">Settings</.link>
+      </li>
+      <li>
+        <.link
+          href={~p"/users/log-out"}
+          method="delete"
+          class="btn btn-ghost btn-sm text-base-content/60"
+        >
+          Log out
+        </.link>
+      </li>
+    <% else %>
+      <li><.link navigate={~p"/users/log-in"} class="btn btn-ghost btn-sm">Log in</.link></li>
+      <li>
+        <.link navigate={~p"/users/register"} class="btn btn-primary btn-sm">Sign up</.link>
+      </li>
+    <% end %>
     """
   end
 

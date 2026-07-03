@@ -57,11 +57,19 @@ defmodule PassWeb.AssetLive.Show do
           phx-submit="save_credential"
           class="rounded-box border border-base-300 p-4 space-y-3"
         >
+          <h3 :if={@editing_credential} class="font-semibold">
+            Editing “{@editing_credential.label}”
+          </h3>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <.input field={@credential_form[:label]} type="text" label="Label" required />
             <.input field={@credential_form[:username]} type="text" label="Username" />
             <.input field={@credential_form[:url]} type="text" label="URL" />
-            <.input field={@credential_form[:secret]} type="password" label="Password / secret" />
+            <.input
+              field={@credential_form[:secret]}
+              type="password"
+              label="Password / secret"
+              placeholder={@editing_credential && "Leave blank to keep the current secret"}
+            />
           </div>
           <.input field={@credential_form[:notes]} type="textarea" label="Notes (encrypted)" />
           <div class="flex gap-2">
@@ -109,16 +117,25 @@ defmodule PassWeb.AssetLive.Show do
               </div>
             </div>
 
-            <button
-              :if={@can_write}
-              type="button"
-              class="btn btn-xs btn-error btn-soft"
-              phx-click="delete_credential"
-              phx-value-id={credential.id}
-              data-confirm={"Delete the credential \"#{credential.label}\"?"}
-            >
-              Delete
-            </button>
+            <div :if={@can_write} class="flex flex-none gap-2">
+              <button
+                type="button"
+                class="btn btn-xs"
+                phx-click="edit_credential"
+                phx-value-id={credential.id}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs btn-error btn-soft"
+                phx-click="delete_credential"
+                phx-value-id={credential.id}
+                data-confirm={"Delete the credential \"#{credential.label}\"?"}
+              >
+                Delete
+              </button>
+            </div>
           </li>
         </ul>
 
@@ -226,6 +243,9 @@ defmodule PassWeb.AssetLive.Show do
           phx-submit="save_contact"
           class="rounded-box border border-base-300 p-4 space-y-3"
         >
+          <h3 :if={@editing_contact} class="font-semibold">
+            Editing “{@editing_contact.name}”
+          </h3>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <.input field={@contact_form[:name]} type="text" label="Name" required />
             <.input
@@ -273,16 +293,25 @@ defmodule PassWeb.AssetLive.Show do
               </p>
             </div>
 
-            <button
-              :if={@can_write}
-              type="button"
-              class="btn btn-xs btn-error btn-soft"
-              phx-click="delete_contact"
-              phx-value-id={contact.id}
-              data-confirm={"Delete contact \"#{contact.name}\"?"}
-            >
-              Delete
-            </button>
+            <div :if={@can_write} class="flex flex-none gap-2">
+              <button
+                type="button"
+                class="btn btn-xs"
+                phx-click="edit_contact"
+                phx-value-id={contact.id}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs btn-error btn-soft"
+                phx-click="delete_contact"
+                phx-value-id={contact.id}
+                data-confirm={"Delete contact \"#{contact.name}\"?"}
+              >
+                Delete
+              </button>
+            </div>
           </li>
         </ul>
 
@@ -322,6 +351,8 @@ defmodule PassWeb.AssetLive.Show do
      |> assign(:can_write, Scope.can?(socket.assigns.current_scope, :write))
      |> assign(:adding?, false)
      |> assign(:adding_contact?, false)
+     |> assign(:editing_credential, nil)
+     |> assign(:editing_contact, nil)
      |> assign(:credential_count, length(credentials))
      |> assign(:document_count, length(documents))
      |> assign(:contact_count, length(contacts))
@@ -339,34 +370,44 @@ defmodule PassWeb.AssetLive.Show do
 
   @impl true
   def handle_event("new_credential", _params, socket) do
-    {:noreply, socket |> assign(:adding?, true) |> assign_new_credential_form()}
+    {:noreply,
+     socket
+     |> assign(:adding?, true)
+     |> assign(:editing_credential, nil)
+     |> assign_new_credential_form()}
+  end
+
+  def handle_event("edit_credential", %{"id" => id}, socket) do
+    guard_write(socket, fn ->
+      credential = Vault.get_credential!(socket.assigns.asset, id)
+
+      # The secret is stripped so the decrypted value is never rendered into
+      # the form; leaving the field blank on save keeps the stored secret.
+      form_base = %{credential | secret: nil}
+
+      {:noreply,
+       socket
+       |> assign(:adding?, true)
+       |> assign(:editing_credential, credential)
+       |> assign(:credential_form, to_form(Vault.change_credential(form_base), as: "credential"))}
+    end)
   end
 
   def handle_event("cancel_credential", _params, socket) do
-    {:noreply, assign(socket, :adding?, false)}
+    {:noreply, socket |> assign(:adding?, false) |> assign(:editing_credential, nil)}
   end
 
   def handle_event("validate_credential", %{"credential" => params}, socket) do
-    changeset = %Credential{} |> Vault.change_credential(params) |> Map.put(:action, :validate)
+    base = socket.assigns.editing_credential || %Credential{}
+    changeset = base |> Vault.change_credential(params) |> Map.put(:action, :validate)
     {:noreply, assign(socket, :credential_form, to_form(changeset, as: "credential"))}
   end
 
   def handle_event("save_credential", %{"credential" => params}, socket) do
     guard_write(socket, fn ->
-      case Vault.create_credential(socket.assigns.asset, params) do
-        {:ok, credential} ->
-          audit(socket, "credential.created", credential.id, credential.label)
-
-          {:noreply,
-           socket
-           |> assign(:adding?, false)
-           |> update(:credential_count, &(&1 + 1))
-           |> assign_new_credential_form()
-           |> stream_insert(:credentials, credential)
-           |> put_flash(:info, "Credential saved.")}
-
-        {:error, changeset} ->
-          {:noreply, assign(socket, :credential_form, to_form(changeset, as: "credential"))}
+      case socket.assigns.editing_credential do
+        nil -> create_credential(socket, params)
+        credential -> update_credential(socket, credential, params)
       end
     end)
   end
@@ -420,34 +461,40 @@ defmodule PassWeb.AssetLive.Show do
   end
 
   def handle_event("new_contact", _params, socket) do
-    {:noreply, socket |> assign(:adding_contact?, true) |> assign_new_contact_form()}
+    {:noreply,
+     socket
+     |> assign(:adding_contact?, true)
+     |> assign(:editing_contact, nil)
+     |> assign_new_contact_form()}
+  end
+
+  def handle_event("edit_contact", %{"id" => id}, socket) do
+    guard_write(socket, fn ->
+      contact = Vault.get_contact!(socket.assigns.asset, id)
+
+      {:noreply,
+       socket
+       |> assign(:adding_contact?, true)
+       |> assign(:editing_contact, contact)
+       |> assign(:contact_form, to_form(Vault.change_contact(contact), as: "contact"))}
+    end)
   end
 
   def handle_event("cancel_contact", _params, socket) do
-    {:noreply, assign(socket, :adding_contact?, false)}
+    {:noreply, socket |> assign(:adding_contact?, false) |> assign(:editing_contact, nil)}
   end
 
   def handle_event("validate_contact", %{"contact" => params}, socket) do
-    changeset = %Contact{} |> Vault.change_contact(params) |> Map.put(:action, :validate)
+    base = socket.assigns.editing_contact || %Contact{}
+    changeset = base |> Vault.change_contact(params) |> Map.put(:action, :validate)
     {:noreply, assign(socket, :contact_form, to_form(changeset, as: "contact"))}
   end
 
   def handle_event("save_contact", %{"contact" => params}, socket) do
     guard_write(socket, fn ->
-      case Vault.create_contact(socket.assigns.asset, params) do
-        {:ok, contact} ->
-          audit(socket, "contact.created", contact.id, contact.name)
-
-          {:noreply,
-           socket
-           |> assign(:adding_contact?, false)
-           |> update(:contact_count, &(&1 + 1))
-           |> assign_new_contact_form()
-           |> stream_insert(:contacts, contact)
-           |> put_flash(:info, "Contact saved.")}
-
-        {:error, changeset} ->
-          {:noreply, assign(socket, :contact_form, to_form(changeset, as: "contact"))}
+      case socket.assigns.editing_contact do
+        nil -> create_contact(socket, params)
+        contact -> update_contact(socket, contact, params)
       end
     end)
   end
@@ -494,6 +541,82 @@ defmodule PassWeb.AssetLive.Show do
       fun.()
     else
       {:noreply, put_flash(socket, :error, "You have view-only access.")}
+    end
+  end
+
+  defp create_credential(socket, params) do
+    case Vault.create_credential(socket.assigns.asset, params) do
+      {:ok, credential} ->
+        audit(socket, "credential.created", credential.id, credential.label)
+
+        {:noreply,
+         socket
+         |> assign(:adding?, false)
+         |> update(:credential_count, &(&1 + 1))
+         |> assign_new_credential_form()
+         |> stream_insert(:credentials, credential)
+         |> put_flash(:info, "Credential saved.")}
+
+      {:error, changeset} ->
+        {:noreply, assign(socket, :credential_form, to_form(changeset, as: "credential"))}
+    end
+  end
+
+  defp update_credential(socket, credential, params) do
+    # The edit form never renders the stored secret, so a blank field means
+    # "keep the existing secret" — drop the key entirely instead of nilifying.
+    params = if params["secret"] in [nil, ""], do: Map.delete(params, "secret"), else: params
+
+    case Vault.update_credential(credential, params) do
+      {:ok, updated} ->
+        audit(socket, "credential.updated", updated.id, updated.label)
+
+        {:noreply,
+         socket
+         |> assign(:adding?, false)
+         |> assign(:editing_credential, nil)
+         |> assign_new_credential_form()
+         |> stream_insert(:credentials, updated)
+         |> put_flash(:info, "Credential updated.")}
+
+      {:error, changeset} ->
+        {:noreply, assign(socket, :credential_form, to_form(changeset, as: "credential"))}
+    end
+  end
+
+  defp create_contact(socket, params) do
+    case Vault.create_contact(socket.assigns.asset, params) do
+      {:ok, contact} ->
+        audit(socket, "contact.created", contact.id, contact.name)
+
+        {:noreply,
+         socket
+         |> assign(:adding_contact?, false)
+         |> update(:contact_count, &(&1 + 1))
+         |> assign_new_contact_form()
+         |> stream_insert(:contacts, contact)
+         |> put_flash(:info, "Contact saved.")}
+
+      {:error, changeset} ->
+        {:noreply, assign(socket, :contact_form, to_form(changeset, as: "contact"))}
+    end
+  end
+
+  defp update_contact(socket, contact, params) do
+    case Vault.update_contact(contact, params) do
+      {:ok, updated} ->
+        audit(socket, "contact.updated", updated.id, updated.name)
+
+        {:noreply,
+         socket
+         |> assign(:adding_contact?, false)
+         |> assign(:editing_contact, nil)
+         |> assign_new_contact_form()
+         |> stream_insert(:contacts, updated)
+         |> put_flash(:info, "Contact updated.")}
+
+      {:error, changeset} ->
+        {:noreply, assign(socket, :contact_form, to_form(changeset, as: "contact"))}
     end
   end
 
