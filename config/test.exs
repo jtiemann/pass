@@ -8,6 +8,14 @@ config :wax_,
   origin: "http://localhost:4000",
   rp_id: "localhost"
 
+# Encryption at rest (Cloak) — fixed test key.
+config :pass, Pass.Encryption.Vault,
+  ciphers: [
+    default:
+      {Cloak.Ciphers.AES.GCM,
+       tag: "AES.GCM.V1", key: Base.decode64!("SnnlI94TTRVzlJCBKEzbmwylfVJT8rfkOo1kXFmKNf0=")}
+  ]
+
 # Configure your database
 #
 # The MIX_TEST_PARTITION environment variable can be used

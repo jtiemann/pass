@@ -6,6 +6,19 @@ config :wax_,
   origin: "http://localhost:4000",
   rp_id: "localhost"
 
+# Encryption at rest (Cloak). DEV-ONLY default key — protects only local throwaway
+# data. Override with PASS_CLOAK_KEY. Production requires a real key (see runtime.exs).
+config :pass, Pass.Encryption.Vault,
+  ciphers: [
+    default:
+      {Cloak.Ciphers.AES.GCM,
+       tag: "AES.GCM.V1",
+       key:
+         Base.decode64!(
+           System.get_env("PASS_CLOAK_KEY") || "SnnlI94TTRVzlJCBKEzbmwylfVJT8rfkOo1kXFmKNf0="
+         )}
+  ]
+
 # Local dev DB password, read from the environment so no secret is committed.
 # Set PASS_DB_PASSWORD in your shell (defaults to the conventional "postgres").
 db_password = System.get_env("PASS_DB_PASSWORD", "postgres")

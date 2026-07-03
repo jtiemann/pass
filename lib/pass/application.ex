@@ -10,6 +10,7 @@ defmodule Pass.Application do
     children = [
       PassWeb.Telemetry,
       Pass.Repo,
+      Pass.Encryption.Vault,
       {DNSCluster, query: Application.get_env(:pass, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Pass.PubSub},
       # Start a worker by calling: Pass.Worker.start_link(arg)

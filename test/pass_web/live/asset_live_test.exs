@@ -61,4 +61,57 @@ defmodule PassWeb.AssetLiveTest do
       assert html =~ "Financial"
     end
   end
+
+  describe "credentials on the show page" do
+    setup :register_and_log_in_user
+
+    setup %{scope: scope} do
+      {:ok, asset} = Pass.Vault.create_asset(scope, %{name: "Bank", category: :financial})
+      %{asset: asset}
+    end
+
+    test "adds a credential and never renders the plaintext secret", %{conn: conn, asset: asset} do
+      {:ok, lv, _html} = live(conn, ~p"/assets/#{asset}")
+
+      html =
+        lv
+        |> element("button", "Add credential")
+        |> render_click()
+
+      assert html =~ "credential-form"
+
+      html =
+        lv
+        |> form("#credential-form",
+          credential: %{label: "Online banking", username: "jon", secret: "hunter2"}
+        )
+        |> render_submit()
+
+      assert html =~ "Online banking"
+      assert html =~ "jon"
+      # The secret must not appear in the rendered DOM (only masked).
+      refute html =~ "hunter2"
+      assert html =~ "••••••••"
+    end
+
+    test "reveal pushes the decrypted secret as an event, not into the DOM", %{
+      conn: conn,
+      asset: asset
+    } do
+      {:ok, credential} = Pass.Vault.create_credential(asset, %{label: "Login", secret: "s3cret"})
+      {:ok, lv, _html} = live(conn, ~p"/assets/#{asset}")
+
+      render_hook(lv, "reveal", %{"id" => credential.id})
+      assert_push_event(lv, "secret:show", %{id: _id, value: "s3cret"})
+    end
+
+    test "deletes a credential", %{conn: conn, asset: asset} do
+      {:ok, credential} = Pass.Vault.create_credential(asset, %{label: "Temp", secret: "x"})
+      {:ok, lv, html} = live(conn, ~p"/assets/#{asset}")
+      assert html =~ "Temp"
+
+      html = render_hook(lv, "delete_credential", %{"id" => credential.id})
+      refute html =~ "Temp"
+    end
+  end
 end

@@ -52,6 +52,20 @@ if config_env() == :prod do
       You can generate one by calling: mix phx.gen.secret
       """
 
+  # Encryption-at-rest key for Cloak. Must be a base64-encoded 32-byte key.
+  # Generate one with: mix phx.gen.secret 32 | base64  (or :crypto.strong_rand_bytes/1)
+  cloak_key =
+    System.get_env("PASS_CLOAK_KEY") ||
+      raise """
+      environment variable PASS_CLOAK_KEY is missing.
+      Generate one by calling: Base.encode64(:crypto.strong_rand_bytes(32))
+      """
+
+  config :pass, Pass.Encryption.Vault,
+    ciphers: [
+      default: {Cloak.Ciphers.AES.GCM, tag: "AES.GCM.V1", key: Base.decode64!(cloak_key)}
+    ]
+
   host = System.get_env("PHX_HOST") || "example.com"
 
   config :pass, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")

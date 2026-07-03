@@ -9,7 +9,7 @@ defmodule Pass.Vault do
   import Ecto.Query, warn: false
 
   alias Pass.Repo
-  alias Pass.Vault.Asset
+  alias Pass.Vault.{Asset, Credential}
   alias Pass.Accounts.Scope
 
   @topic "assets"
@@ -61,4 +61,40 @@ defmodule Pass.Vault do
   end
 
   defp broadcast(other, _event), do: other
+
+  ## Credentials
+
+  @doc "Lists the credentials attached to an asset, oldest first."
+  def list_credentials(%Asset{id: asset_id}) do
+    Repo.all(from c in Credential, where: c.asset_id == ^asset_id, order_by: [asc: c.inserted_at])
+  end
+
+  @doc "Fetches a credential belonging to the given asset (raises if missing)."
+  def get_credential!(%Asset{id: asset_id}, id) do
+    Repo.get_by!(Credential, id: id, asset_id: asset_id)
+  end
+
+  @doc "Builds a changeset for form rendering."
+  def change_credential(%Credential{} = credential, attrs \\ %{}) do
+    Credential.changeset(credential, attrs)
+  end
+
+  @doc "Creates a credential on an asset."
+  def create_credential(%Asset{id: asset_id}, attrs) do
+    %Credential{asset_id: asset_id}
+    |> Credential.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc "Updates a credential."
+  def update_credential(%Credential{} = credential, attrs) do
+    credential
+    |> Credential.changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc "Deletes a credential."
+  def delete_credential(%Credential{} = credential) do
+    Repo.delete(credential)
+  end
 end

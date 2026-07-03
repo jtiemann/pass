@@ -42,6 +42,8 @@ defmodule Pass.MixProject do
     [
       {:pbkdf2_elixir, "~> 2.0"},
       {:wax_, "~> 0.6"},
+      {:cloak, "~> 1.1"},
+      {:cloak_ecto, "~> 1.3"},
       {:phoenix, "~> 1.8.8"},
       {:phoenix_ecto, "~> 4.5"},
       {:ecto_sql, "~> 3.13"},
