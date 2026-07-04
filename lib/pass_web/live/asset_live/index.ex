@@ -14,6 +14,9 @@ defmodule PassWeb.AssetLive.Index do
         Assets
         <:subtitle>Everything the family owns, and how to get to it.</:subtitle>
         <:actions>
+          <.button navigate={~p"/assets/grid"}>
+            <.icon name="hero-table-cells" /> Spreadsheet
+          </.button>
           <.button :if={@can_write} variant="primary" navigate={~p"/assets/new"}>
             <.icon name="hero-plus" /> New asset
           </.button>

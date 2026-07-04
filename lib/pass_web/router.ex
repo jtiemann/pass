@@ -89,6 +89,7 @@ defmodule PassWeb.Router do
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
 
       live "/assets", AssetLive.Index, :index
+      live "/assets/grid", AssetLive.Grid, :index
       live "/assets/new", AssetLive.Form, :new
       live "/assets/:id", AssetLive.Show, :show
       live "/assets/:id/edit", AssetLive.Form, :edit
