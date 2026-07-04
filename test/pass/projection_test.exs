@@ -178,6 +178,98 @@ defmodule Pass.Vault.ProjectionTest do
     end
   end
 
+  describe "reallocation of depleted draws" do
+    defp with_id(attrs), do: asset(Keyword.put_new(attrs, :id, Ecto.UUID.generate()))
+
+    test "a depleted draw continues in full from its fallback target" do
+      spender =
+        with_id(
+          estimated_value: Decimal.new(1000),
+          annual_return_pct: Decimal.new(0),
+          annual_draw: Decimal.new(400)
+        )
+
+      reserve = with_id(estimated_value: Decimal.new(10_000), annual_return_pct: Decimal.new(0))
+
+      %{rows: rows, totals: [{"USD", totals}]} =
+        Projection.project_assets([spender, reserve], 5, %{spender.id => %{reserve.id => 1.0}})
+
+      [spender_row, reserve_row] = rows
+
+      # Spender: 400 + 400 + 200, depleted in year 3.
+      assert spender_row.depleted_at == 3
+      assert_in_delta spender_row.total_drawn, 1000.0, 0.01
+
+      # Reserve picks up the rest: 200 (y3 gap) + 400 + 400 = 1,000.
+      assert_in_delta reserve_row.total_drawn, 1000.0, 0.01
+      assert_in_delta reserve_row.future_value, 9000.0, 0.01
+
+      # The full 400/yr × 5y was met; nothing unfunded.
+      assert_in_delta totals.drawn, 2000.0, 0.01
+      assert_in_delta totals.unfunded, 0.0, 0.001
+      assert totals.first_gap_year == nil
+    end
+
+    test "a draw can be split among several targets" do
+      spender =
+        with_id(
+          estimated_value: Decimal.new(1000),
+          annual_return_pct: Decimal.new(0),
+          annual_draw: Decimal.new(400)
+        )
+
+      alpha = with_id(estimated_value: Decimal.new(5000), annual_return_pct: Decimal.new(0))
+      beta = with_id(estimated_value: Decimal.new(5000), annual_return_pct: Decimal.new(0))
+
+      %{rows: [_, alpha_row, beta_row], totals: [{"USD", totals}]} =
+        Projection.project_assets(
+          [spender, alpha, beta],
+          5,
+          %{spender.id => %{alpha.id => 0.5, beta.id => 0.5}}
+        )
+
+      # Each covers half of 200 + 400 + 400 = 500.
+      assert_in_delta alpha_row.total_drawn, 500.0, 0.01
+      assert_in_delta beta_row.total_drawn, 500.0, 0.01
+      assert_in_delta totals.unfunded, 0.0, 0.001
+    end
+
+    test "when the fallback also runs dry, the rest is unfunded with a gap year" do
+      spender =
+        with_id(
+          estimated_value: Decimal.new(1000),
+          annual_return_pct: Decimal.new(0),
+          annual_draw: Decimal.new(500)
+        )
+
+      small = with_id(estimated_value: Decimal.new(300), annual_return_pct: Decimal.new(0))
+
+      %{rows: [_, small_row], totals: [{"USD", totals}]} =
+        Projection.project_assets([spender, small], 5, %{spender.id => %{small.id => 1.0}})
+
+      # y3: 500 needed, small covers its 300 and depletes; 200 + 500 + 500 unfunded.
+      assert small_row.depleted_at == 3
+      assert_in_delta small_row.total_drawn, 300.0, 0.01
+      assert_in_delta totals.unfunded, 1200.0, 0.01
+      assert totals.first_gap_year == 3
+    end
+
+    test "without an allocation, shortfalls are reported as unfunded" do
+      spender =
+        with_id(
+          estimated_value: Decimal.new(1000),
+          annual_return_pct: Decimal.new(0),
+          annual_draw: Decimal.new(400)
+        )
+
+      %{totals: [{"USD", totals}]} = Projection.project_assets([spender], 5)
+
+      # y3 gap 200, y4 400, y5 400.
+      assert_in_delta totals.unfunded, 1000.0, 0.01
+      assert totals.first_gap_year == 3
+    end
+  end
+
   describe "project_assets/2" do
     test "aggregates per currency and counts excluded assets" do
       assets = [

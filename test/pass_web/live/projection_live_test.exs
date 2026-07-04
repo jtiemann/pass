@@ -67,6 +67,47 @@ defmodule PassWeb.ProjectionLiveTest do
       assert html =~ "USD 30,000.00"
     end
 
+    test "asks where a depleted draw should continue and re-projects on allocation", %{
+      conn: conn,
+      scope: scope
+    } do
+      {:ok, spender} =
+        Pass.Vault.create_asset(scope, %{
+          name: "Spending account",
+          category: :other,
+          estimated_value: 100_000,
+          currency: "USD",
+          annual_return_pct: 0,
+          annual_draw: 30_000
+        })
+
+      {:ok, _reserve} =
+        Pass.Vault.create_asset(scope, %{
+          name: "Reserve fund",
+          category: :other,
+          estimated_value: 500_000,
+          currency: "USD",
+          annual_return_pct: 0
+        })
+
+      {:ok, lv, html} = live(conn, ~p"/projections")
+
+      # The page asks where to continue the draw, and reports the gap.
+      assert html =~ "runs out in year 4"
+      assert html =~ "Continue its"
+      assert html =~ "Reserve fund"
+      assert html =~ "can&#39;t be funded"
+
+      # Split evenly (one target = 100% to the reserve): gap disappears,
+      # the reserve absorbs 50,000 of draws over 5 years.
+      html = render_click(lv, "split_evenly", %{"source" => spender.id})
+      refute html =~ "can&#39;t be funded"
+      assert html =~ "Fully allocated."
+
+      # Total drawn now covers the full 30,000 × 5.
+      assert html =~ "USD 150,000.00"
+    end
+
     test "flags category defaults as assumed", %{conn: conn, scope: scope} do
       {:ok, _} =
         Pass.Vault.create_asset(scope, %{

@@ -110,31 +110,202 @@ defmodule Pass.Vault.Projection do
   end
 
   @doc """
-  Projects a list of assets and aggregates per currency. Returns
-  `%{rows: [...], totals: [{currency, %{current:, total:, gain:}}], excluded: n}`
-  where `excluded` counts assets without an estimated value.
+  Projects a list of assets jointly, per currency, and aggregates.
+
+  `reallocations` maps a depleted asset's id to `%{target_asset_id => fraction}`
+  (fractions 0..1). Draws never stop: once an asset can't cover its own draw,
+  the shortfall is redirected to its targets **in the same year** (each target
+  gives up to its share of the shortfall). Whatever no one covers accumulates
+  as an *unfunded* shortfall for that currency, with the first gap year noted.
+  Redirection happens only within the same currency.
+
+  Returns `%{rows: [...], totals: [{currency, totals_map}], excluded: n}` where
+  each totals map has `:current`, `:total`, `:drawn`, `:gain`, `:unfunded`, and
+  `:first_gap_year`.
   """
-  def project_assets(assets, years) do
+  def project_assets(assets, years, reallocations \\ %{}) do
+    {valued, skipped} = Enum.split_with(assets, & &1.estimated_value)
+    indexed = Enum.with_index(valued)
+
+    results =
+      indexed
+      |> Enum.group_by(fn {asset, _idx} -> asset.currency end)
+      |> Enum.map(fn {currency, group} ->
+        {currency, simulate_group(group, years, reallocations)}
+      end)
+
     rows =
-      assets
-      |> Enum.map(&project_asset(&1, years))
-      |> Enum.reject(&is_nil/1)
+      results
+      |> Enum.flat_map(fn {_currency, {rows, _totals}} -> rows end)
+      |> Enum.sort_by(fn {_row, idx} -> idx end)
+      |> Enum.map(fn {row, _idx} -> row end)
 
     totals =
-      rows
-      |> Enum.group_by(& &1.asset.currency)
-      |> Enum.map(fn {currency, currency_rows} ->
-        {currency,
-         %{
-           current: sum_by(currency_rows, & &1.current),
-           total: sum_by(currency_rows, & &1.total),
-           drawn: sum_by(currency_rows, & &1.total_drawn),
-           gain: sum_by(currency_rows, & &1.gain)
-         }}
-      end)
+      results
+      |> Enum.map(fn {currency, {_rows, totals}} -> {currency, totals} end)
       |> Enum.sort_by(fn {_currency, %{current: current}} -> current end, :desc)
 
-    %{rows: rows, totals: totals, excluded: length(assets) - length(rows)}
+    %{rows: rows, totals: totals, excluded: length(skipped)}
+  end
+
+  # Simulates all assets of one currency together, year by year, so that
+  # shortfalls can be redirected between them.
+  defp simulate_group(group, years, reallocations) do
+    params =
+      Enum.map(group, fn {asset, idx} ->
+        assumed? = is_nil(asset.annual_return_pct)
+
+        return_pct =
+          if assumed?, do: default_return(asset.category), else: to_float(asset.annual_return_pct)
+
+        yield_pct = if asset.dividend_yield_pct, do: to_float(asset.dividend_yield_pct), else: 0.0
+
+        %{
+          idx: idx,
+          asset: asset,
+          pv: Decimal.to_float(asset.estimated_value),
+          r: return_pct / 100,
+          d: yield_pct / 100,
+          reinvested?: asset.dividends_reinvested,
+          draw: if(asset.annual_draw, do: to_float(asset.annual_draw), else: 0.0),
+          return_pct: return_pct,
+          yield_pct: yield_pct,
+          assumed?: assumed?
+        }
+      end)
+
+    id_to_idx = for %{asset: %{id: id}, idx: idx} <- params, id != nil, into: %{}, do: {id, idx}
+
+    init_states =
+      Map.new(params, fn p ->
+        {p.idx, %{value: p.pv, cash: 0.0, drawn: 0.0, depleted_at: nil}}
+      end)
+
+    {states, unfunded, first_gap_year} =
+      Enum.reduce(1..years//1, {init_states, 0.0, nil}, fn year, acc ->
+        simulate_year(year, params, acc, reallocations, id_to_idx)
+      end)
+
+    rows =
+      Enum.map(params, fn p ->
+        state = states[p.idx]
+        total = state.value + state.cash
+
+        row = %{
+          asset: p.asset,
+          current: p.pv,
+          future_value: state.value,
+          dividends_cash: state.cash,
+          total_drawn: state.drawn,
+          depleted_at: state.depleted_at,
+          total: total,
+          gain: total + state.drawn - p.pv,
+          return_pct: p.return_pct,
+          yield_pct: p.yield_pct,
+          assumed?: p.assumed?
+        }
+
+        {row, p.idx}
+      end)
+
+    totals = %{
+      current: sum_by(rows, fn {row, _} -> row.current end),
+      total: sum_by(rows, fn {row, _} -> row.total end),
+      drawn: sum_by(rows, fn {row, _} -> row.total_drawn end),
+      gain: sum_by(rows, fn {row, _} -> row.gain end),
+      unfunded: unfunded,
+      first_gap_year: first_gap_year
+    }
+
+    {rows, totals}
+  end
+
+  defp simulate_year(year, params, {states, unfunded, first_gap}, reallocations, id_to_idx) do
+    # Phase 1: dividends, growth, and each asset's own draw. Shortfalls are the
+    # part of a draw the asset itself couldn't cover this year.
+    {states, shortfalls} =
+      Enum.reduce(params, {states, []}, fn p, {states, shortfalls} ->
+        state = states[p.idx]
+
+        cond do
+          state.value <= 0.0 and p.draw > 0.0 ->
+            {states, [{p, p.draw} | shortfalls]}
+
+          state.value <= 0.0 ->
+            {states, shortfalls}
+
+          true ->
+            cash = if p.reinvested?, do: state.cash, else: state.cash + state.value * p.d
+            growth = 1 + p.r + if(p.reinvested?, do: p.d, else: 0.0)
+            grown = max(state.value * growth, 0.0)
+            take = min(p.draw, grown)
+            value = grown - take
+
+            depleted_at =
+              if value <= 0.0 and p.draw > 0.0 and is_nil(state.depleted_at),
+                do: year,
+                else: state.depleted_at
+
+            state = %{
+              state
+              | value: value,
+                cash: cash,
+                drawn: state.drawn + take,
+                depleted_at: depleted_at
+            }
+
+            states = Map.put(states, p.idx, state)
+
+            if p.draw - take > 1.0e-9 do
+              {states, [{p, p.draw - take} | shortfalls]}
+            else
+              {states, shortfalls}
+            end
+        end
+      end)
+
+    # Phase 2: redirect shortfalls to their fallback targets; whatever the
+    # targets can't cover is unfunded.
+    Enum.reduce(shortfalls, {states, unfunded, first_gap}, fn {p, amount},
+                                                              {states, unfunded, first_gap} ->
+      allocation = Map.get(reallocations, p.asset.id, %{})
+
+      {states, covered} =
+        Enum.reduce(allocation, {states, 0.0}, fn {target_id, fraction}, {states, covered} ->
+          target_idx = Map.get(id_to_idx, target_id)
+
+          if is_nil(target_idx) or target_idx == p.idx or fraction <= 0.0 do
+            {states, covered}
+          else
+            target = states[target_idx]
+            want = amount * fraction
+            take = min(want, max(target.value, 0.0))
+            value = target.value - take
+
+            depleted_at =
+              if value <= 0.0 and take > 0.0 and is_nil(target.depleted_at),
+                do: year,
+                else: target.depleted_at
+
+            target = %{
+              target
+              | value: value,
+                drawn: target.drawn + take,
+                depleted_at: depleted_at
+            }
+
+            {Map.put(states, target_idx, target), covered + take}
+          end
+        end)
+
+      gap = amount - covered
+
+      if gap > 1.0e-9 do
+        {states, unfunded + gap, first_gap || year}
+      else
+        {states, unfunded, first_gap}
+      end
+    end)
   end
 
   @doc "Rounds a float projection to a Decimal with cents, for money formatting."
