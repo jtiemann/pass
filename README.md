@@ -13,6 +13,12 @@ people who can help (advisors, attorneys, agents).
   and an **audit log** of who accessed and changed what
 - **Defense in depth**: rate-limited logins, re-authentication for security-sensitive
   settings, a strict Content-Security-Policy, and short (7-day) sessions
+- **Financial projections**: per-asset growth assumptions (with historical defaults
+  per asset class), dividends (reinvested or paid out), yearly draws with depletion
+  warnings and fallback reallocation ("when this account runs dry, keep drawing
+  from…"), real-estate modeling (amortizing loans, HOA, rental income — everything
+  counted at equity), and a 20-year value chart
+- **Spreadsheet view** for quick bulk editing of assets — cells save as you leave them
 - **Backup story**: a [runbook](BACKUP.md) plus `mix pass.export` /
   `mix pass.import` for a printable, restorable emergency kit
 - Built with **Elixir / Phoenix LiveView**, with **Ramda** and **RxJS** in the browser
@@ -233,6 +239,9 @@ edit `config/dev.exs` / `config/test.exs`.
    requires it as the second factor.
 6. Invite the rest of the family from **Members** (email + role) — each invitee gets a
    login link by email (in dev, it lands in `/dev/mailbox`).
+7. Add your assets (the **Spreadsheet** view is fastest for bulk entry), give them
+   values and growth assumptions, then open **Projections** to see where the family
+   stands in 5, 10, or 20 years — including draws, rental income, and mortgages.
 
 > **Re-authentication prompts:** managing passkeys, recovery codes, and member roles
 > requires a login fresher than 10 minutes. Being bounced to the login page there is
