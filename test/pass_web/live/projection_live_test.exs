@@ -122,6 +122,71 @@ defmodule PassWeb.ProjectionLiveTest do
       assert html =~ "-10%"
     end
 
+    test "shows a financed rental property at equity with loan and cash-flow detail", %{
+      conn: conn,
+      scope: scope
+    } do
+      {:ok, _} =
+        Pass.Vault.create_asset(scope, %{
+          name: "Rental condo",
+          category: :real_estate,
+          estimated_value: 300_000,
+          currency: "USD",
+          annual_return_pct: 0,
+          loan_balance: 100_000,
+          loan_interest_pct: 0,
+          loan_monthly_payment: 1000,
+          rent_monthly: 2000,
+          hoa_monthly: 300
+        })
+
+      {:ok, _lv, html} = live(conn, ~p"/projections")
+
+      # Today = equity (300k − 100k), with the loan called out.
+      assert html =~ "USD 200,000.00"
+      assert html =~ "equity after USD 100,000.00 loan"
+      assert html =~ "rent 2,000.00/mo"
+      assert html =~ "HOA 300.00/mo"
+      # After 5y: equity 260k + ops cash 42k = 302k, 40k loan left.
+      assert html =~ "USD 302,000.00"
+      assert html =~ "USD 40,000.00 loan remaining"
+    end
+
+    test "real-estate finances round-trip through the asset form", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/assets/new")
+
+      # The Property finances section only appears once the category is real
+      # estate, so switch it first (as a user would).
+      html =
+        lv
+        |> form("#asset-form", asset: %{category: "real_estate"})
+        |> render_change()
+
+      assert html =~ "Property finances"
+
+      lv
+      |> form("#asset-form",
+        asset: %{
+          name: "Beach condo",
+          category: "real_estate",
+          estimated_value: "400000",
+          loan_balance: "250000",
+          loan_interest_pct: "5.5",
+          loan_monthly_payment: "1800",
+          hoa_monthly: "450",
+          rent_monthly: "2600"
+        }
+      )
+      |> render_submit()
+
+      [asset] = Pass.Vault.list_assets()
+      assert Decimal.equal?(asset.loan_balance, Decimal.new(250_000))
+      assert Decimal.equal?(asset.loan_interest_pct, Decimal.new("5.5"))
+      assert Decimal.equal?(asset.loan_monthly_payment, Decimal.new(1800))
+      assert Decimal.equal?(asset.hoa_monthly, Decimal.new(450))
+      assert Decimal.equal?(asset.rent_monthly, Decimal.new(2600))
+    end
+
     test "growth assumptions round-trip through the asset form", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/assets/new")
 

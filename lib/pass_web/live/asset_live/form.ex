@@ -77,6 +77,52 @@ defmodule PassWeb.AssetLive.Form do
           Estimates only — not financial advice.
         </p>
 
+        <div :if={selected_category(@form) == :real_estate}>
+          <div class="divider">Property finances</div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <.input
+              field={@form[:loan_balance]}
+              type="number"
+              label="Loan balance"
+              step="0.01"
+              min="0"
+            />
+            <.input
+              field={@form[:loan_interest_pct]}
+              type="number"
+              label="Loan interest rate (%/yr)"
+              step="0.01"
+              min="0"
+            />
+            <.input
+              field={@form[:loan_monthly_payment]}
+              type="number"
+              label="Loan payment (monthly)"
+              step="0.01"
+              min="0"
+            />
+            <.input
+              field={@form[:hoa_monthly]}
+              type="number"
+              label="HOA fee (monthly)"
+              step="0.01"
+              min="0"
+            />
+            <.input
+              field={@form[:rent_monthly]}
+              type="number"
+              label="Rental income (monthly)"
+              step="0.01"
+              min="0"
+            />
+          </div>
+          <p class="mt-2 text-xs text-base-content/60">
+            Projections count your equity (value − loan) and treat rent, HOA, and loan
+            payments as yearly cash flows. The loan amortizes monthly at the given rate.
+          </p>
+        </div>
+
         <div class="divider">How to access, prove ownership, and sell</div>
 
         <.input
@@ -196,13 +242,15 @@ defmodule PassWeb.AssetLive.Form do
   # Placeholder showing the historical default that applies if the return is
   # left blank, tracking the currently selected category.
   defp return_placeholder(form) do
-    category =
-      case Phoenix.HTML.Form.input_value(form, :category) do
-        category when is_atom(category) and not is_nil(category) -> category
-        category when is_binary(category) and category != "" -> String.to_existing_atom(category)
-        _ -> :other
-      end
-
+    category = selected_category(form)
     "#{Projection.default_return(category)} — #{Asset.humanize_category(category)} default"
+  end
+
+  defp selected_category(form) do
+    case Phoenix.HTML.Form.input_value(form, :category) do
+      category when is_atom(category) and not is_nil(category) -> category
+      category when is_binary(category) and category != "" -> String.to_existing_atom(category)
+      _ -> :other
+    end
   end
 end

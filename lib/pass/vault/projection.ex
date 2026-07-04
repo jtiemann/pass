@@ -54,59 +54,11 @@ defmodule Pass.Vault.Projection do
   return was an assumed category default. Returns `nil` for assets without an
   estimated value.
   """
-  def project_asset(%Asset{estimated_value: nil}, _years), do: nil
-
   def project_asset(%Asset{} = asset, years) when is_integer(years) and years >= 0 do
-    pv = Decimal.to_float(asset.estimated_value)
-    assumed? = is_nil(asset.annual_return_pct)
-
-    return_pct =
-      if assumed?, do: default_return(asset.category), else: to_float(asset.annual_return_pct)
-
-    yield_pct = if asset.dividend_yield_pct, do: to_float(asset.dividend_yield_pct), else: 0.0
-    draw = if asset.annual_draw, do: to_float(asset.annual_draw), else: 0.0
-
-    r = return_pct / 100
-    d = yield_pct / 100
-    reinvested? = asset.dividends_reinvested
-
-    {future_value, dividends_cash, total_drawn, depleted_at} =
-      simulate(pv, r, d, reinvested?, draw, years)
-
-    total = future_value + dividends_cash
-
-    %{
-      asset: asset,
-      current: pv,
-      future_value: future_value,
-      dividends_cash: dividends_cash,
-      total_drawn: total_drawn,
-      depleted_at: depleted_at,
-      total: total,
-      gain: total + total_drawn - pv,
-      return_pct: return_pct,
-      yield_pct: yield_pct,
-      assumed?: assumed?
-    }
-  end
-
-  defp simulate(pv, r, d, reinvested?, draw, years) do
-    Enum.reduce(1..years//1, {pv, 0.0, 0.0, nil}, fn year, {value, cash, drawn, depleted} ->
-      if value <= 0.0 do
-        {value, cash, drawn, depleted}
-      else
-        cash = if reinvested?, do: cash, else: cash + value * d
-        grown = if reinvested?, do: value * (1 + r + d), else: value * (1 + r)
-
-        draw_taken = min(draw, max(grown, 0.0))
-        remaining = max(grown - draw_taken, 0.0)
-
-        depleted =
-          if remaining == 0.0 and draw > 0.0 and is_nil(depleted), do: year, else: depleted
-
-        {remaining, cash, drawn + draw_taken, depleted}
-      end
-    end)
+    case project_assets([asset], years) do
+      %{rows: [row]} -> row
+      %{rows: []} -> nil
+    end
   end
 
   @doc """
@@ -168,6 +120,11 @@ defmodule Pass.Vault.Projection do
           d: yield_pct / 100,
           reinvested?: asset.dividends_reinvested,
           draw: if(asset.annual_draw, do: to_float(asset.annual_draw), else: 0.0),
+          balance: optional_float(asset.loan_balance),
+          monthly_rate: optional_float(asset.loan_interest_pct) / 100 / 12,
+          payment: optional_float(asset.loan_monthly_payment),
+          hoa12: optional_float(asset.hoa_monthly) * 12,
+          rent12: optional_float(asset.rent_monthly) * 12,
           return_pct: return_pct,
           yield_pct: yield_pct,
           assumed?: assumed?
@@ -178,7 +135,16 @@ defmodule Pass.Vault.Projection do
 
     init_states =
       Map.new(params, fn p ->
-        {p.idx, %{value: p.pv, cash: 0.0, drawn: 0.0, depleted_at: nil}}
+        {p.idx,
+         %{
+           value: p.pv,
+           cash: 0.0,
+           drawn: 0.0,
+           depleted_at: nil,
+           balance: p.balance,
+           ops_cash: 0.0,
+           paid_off_at: nil
+         }}
       end)
 
     {states, unfunded, first_gap_year} =
@@ -189,17 +155,26 @@ defmodule Pass.Vault.Projection do
     rows =
       Enum.map(params, fn p ->
         state = states[p.idx]
-        total = state.value + state.cash
+        # The family's stake is equity (value minus loan); operating cash is the
+        # accumulated net of rent − HOA − loan payments (can be negative).
+        current = p.pv - p.balance
+        equity = state.value - state.balance
+        total = equity + state.cash + state.ops_cash
 
         row = %{
           asset: p.asset,
-          current: p.pv,
-          future_value: state.value,
+          current: current,
+          future_value: equity,
+          value_end: state.value,
+          loan_balance_start: p.balance,
+          loan_balance_end: state.balance,
+          loan_paid_off_at: state.paid_off_at,
+          ops_cash: state.ops_cash,
           dividends_cash: state.cash,
           total_drawn: state.drawn,
           depleted_at: state.depleted_at,
           total: total,
-          gain: total + state.drawn - p.pv,
+          gain: total + state.drawn - current,
           return_pct: p.return_pct,
           yield_pct: p.yield_pct,
           assumed?: p.assumed?
@@ -221,46 +196,24 @@ defmodule Pass.Vault.Projection do
   end
 
   defp simulate_year(year, params, {states, unfunded, first_gap}, reallocations, id_to_idx) do
-    # Phase 1: dividends, growth, and each asset's own draw. Shortfalls are the
+    # Phase 1 per asset: dividends & growth on the value, loan amortization,
+    # rent/HOA operating cash, then the asset's own draw. Shortfalls are the
     # part of a draw the asset itself couldn't cover this year.
     {states, shortfalls} =
       Enum.reduce(params, {states, []}, fn p, {states, shortfalls} ->
-        state = states[p.idx]
+        state =
+          states[p.idx]
+          |> grow(p)
+          |> amortize(p, year)
+          |> operate(p)
 
-        cond do
-          state.value <= 0.0 and p.draw > 0.0 ->
-            {states, [{p, p.draw} | shortfalls]}
+        {state, shortfall} = take_own_draw(state, p, year)
+        states = Map.put(states, p.idx, state)
 
-          state.value <= 0.0 ->
-            {states, shortfalls}
-
-          true ->
-            cash = if p.reinvested?, do: state.cash, else: state.cash + state.value * p.d
-            growth = 1 + p.r + if(p.reinvested?, do: p.d, else: 0.0)
-            grown = max(state.value * growth, 0.0)
-            take = min(p.draw, grown)
-            value = grown - take
-
-            depleted_at =
-              if value <= 0.0 and p.draw > 0.0 and is_nil(state.depleted_at),
-                do: year,
-                else: state.depleted_at
-
-            state = %{
-              state
-              | value: value,
-                cash: cash,
-                drawn: state.drawn + take,
-                depleted_at: depleted_at
-            }
-
-            states = Map.put(states, p.idx, state)
-
-            if p.draw - take > 1.0e-9 do
-              {states, [{p, p.draw - take} | shortfalls]}
-            else
-              {states, shortfalls}
-            end
+        if shortfall > 1.0e-9 do
+          {states, [{p, shortfall} | shortfalls]}
+        else
+          {states, shortfalls}
         end
       end)
 
@@ -308,6 +261,66 @@ defmodule Pass.Vault.Projection do
     end)
   end
 
+  # Dividends on the year's starting value, then growth at the return rate.
+  defp grow(%{value: value} = state, _p) when value <= 0.0, do: state
+
+  defp grow(state, p) do
+    cash = if p.reinvested?, do: state.cash, else: state.cash + state.value * p.d
+    growth = 1 + p.r + if(p.reinvested?, do: p.d, else: 0.0)
+    %{state | value: max(state.value * growth, 0.0), cash: cash}
+  end
+
+  # One year of monthly loan amortization: interest accrues, payments come out
+  # of the family's pocket (ops_cash) and reduce the balance. With no payment
+  # the balance just compounds.
+  defp amortize(%{balance: balance} = state, _p, _year) when balance <= 0.0, do: state
+
+  defp amortize(state, p, year) do
+    {balance, paid} =
+      Enum.reduce(1..12, {state.balance, 0.0}, fn _month, {balance, paid} ->
+        if balance <= 0.0 do
+          {balance, paid}
+        else
+          owed = balance * (1 + p.monthly_rate)
+          payment = min(p.payment, owed)
+          {owed - payment, paid + payment}
+        end
+      end)
+
+    paid_off_at =
+      if balance <= 1.0e-9 and is_nil(state.paid_off_at), do: year, else: state.paid_off_at
+
+    %{
+      state
+      | balance: max(balance, 0.0),
+        ops_cash: state.ops_cash - paid,
+        paid_off_at: paid_off_at
+    }
+  end
+
+  # Rent comes in, HOA goes out — the running net is the asset's operating cash
+  # (negative means the family pays to keep it).
+  defp operate(state, %{rent12: rent12, hoa12: hoa12}) when rent12 > 0.0 or hoa12 > 0.0 do
+    %{state | ops_cash: state.ops_cash + rent12 - hoa12}
+  end
+
+  defp operate(state, _p), do: state
+
+  # The asset's own draw against its value; returns the uncovered shortfall.
+  defp take_own_draw(state, %{draw: draw}, _year) when draw <= 0.0, do: {state, 0.0}
+
+  defp take_own_draw(%{value: value} = state, p, _year) when value <= 0.0, do: {state, p.draw}
+
+  defp take_own_draw(state, p, year) do
+    take = min(p.draw, state.value)
+    value = state.value - take
+
+    depleted_at =
+      if value <= 0.0 and is_nil(state.depleted_at), do: year, else: state.depleted_at
+
+    {%{state | value: value, drawn: state.drawn + take, depleted_at: depleted_at}, p.draw - take}
+  end
+
   @doc "Rounds a float projection to a Decimal with cents, for money formatting."
   def to_money(float) when is_float(float) do
     float |> Float.round(2) |> Decimal.from_float()
@@ -316,4 +329,7 @@ defmodule Pass.Vault.Projection do
   defp sum_by(rows, fun), do: Enum.reduce(rows, 0.0, &(fun.(&1) + &2))
 
   defp to_float(%Decimal{} = decimal), do: Decimal.to_float(decimal)
+
+  defp optional_float(nil), do: 0.0
+  defp optional_float(%Decimal{} = decimal), do: Decimal.to_float(decimal)
 end

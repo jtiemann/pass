@@ -49,14 +49,19 @@ defmodule Pass.Vault do
   end
 
   # [{currency, Decimal sum}] for assets that carry a value, largest first.
+  # Loans are netted out: a financed property counts at its equity.
   defp totals_by_currency(assets) do
     assets
     |> Enum.filter(&match?(%Decimal{}, &1.estimated_value))
     |> Enum.group_by(& &1.currency)
     |> Enum.map(fn {currency, list} ->
-      {currency, Enum.reduce(list, Decimal.new(0), &Decimal.add(&2, &1.estimated_value))}
+      {currency, Enum.reduce(list, Decimal.new(0), &Decimal.add(&2, net_value(&1)))}
     end)
     |> Enum.sort_by(fn {_currency, sum} -> Decimal.to_float(sum) end, :desc)
+  end
+
+  defp net_value(asset) do
+    Decimal.sub(asset.estimated_value, asset.loan_balance || Decimal.new(0))
   end
 
   @doc "Fetches an asset by id, raising if missing."
@@ -222,6 +227,13 @@ defmodule Pass.Vault do
               asset.dividend_yield_pct && Decimal.to_string(asset.dividend_yield_pct),
             dividends_reinvested: asset.dividends_reinvested,
             annual_draw: asset.annual_draw && Decimal.to_string(asset.annual_draw),
+            loan_balance: asset.loan_balance && Decimal.to_string(asset.loan_balance),
+            loan_interest_pct:
+              asset.loan_interest_pct && Decimal.to_string(asset.loan_interest_pct),
+            loan_monthly_payment:
+              asset.loan_monthly_payment && Decimal.to_string(asset.loan_monthly_payment),
+            hoa_monthly: asset.hoa_monthly && Decimal.to_string(asset.hoa_monthly),
+            rent_monthly: asset.rent_monthly && Decimal.to_string(asset.rent_monthly),
             access_instructions: asset.access_instructions,
             ownership_proof: asset.ownership_proof,
             sale_instructions: asset.sale_instructions,

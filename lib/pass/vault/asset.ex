@@ -34,6 +34,14 @@ defmodule Pass.Vault.Asset do
     field :dividends_reinvested, :boolean, default: true
     field :annual_draw, :decimal
 
+    # Real-estate (or any financed asset) specifics: an amortizing loan and
+    # monthly carrying costs / rental income. Equity = estimated_value − loan.
+    field :loan_balance, :decimal
+    field :loan_interest_pct, :decimal
+    field :loan_monthly_payment, :decimal
+    field :hoa_monthly, :decimal
+    field :rent_monthly, :decimal
+
     belongs_to :created_by, Pass.Accounts.User
 
     timestamps(type: :utc_datetime)
@@ -73,7 +81,12 @@ defmodule Pass.Vault.Asset do
       :annual_return_pct,
       :dividend_yield_pct,
       :dividends_reinvested,
-      :annual_draw
+      :annual_draw,
+      :loan_balance,
+      :loan_interest_pct,
+      :loan_monthly_payment,
+      :hoa_monthly,
+      :rent_monthly
     ])
     |> validate_required([:name, :category, :status])
     |> validate_length(:name, max: 200)
@@ -87,5 +100,13 @@ defmodule Pass.Vault.Asset do
       less_than_or_equal_to: 100
     )
     |> validate_number(:annual_draw, greater_than_or_equal_to: 0)
+    |> validate_number(:loan_balance, greater_than_or_equal_to: 0)
+    |> validate_number(:loan_interest_pct,
+      greater_than_or_equal_to: 0,
+      less_than_or_equal_to: 100
+    )
+    |> validate_number(:loan_monthly_payment, greater_than_or_equal_to: 0)
+    |> validate_number(:hoa_monthly, greater_than_or_equal_to: 0)
+    |> validate_number(:rent_monthly, greater_than_or_equal_to: 0)
   end
 end

@@ -61,6 +61,20 @@ defmodule Pass.VaultTest do
       assert id == asset.id
     end
 
+    test "dashboard totals count financed assets at their equity", %{scope: scope} do
+      {:ok, _} =
+        Vault.create_asset(scope, %{
+          name: "Condo",
+          category: :real_estate,
+          estimated_value: 300_000,
+          currency: "USD",
+          loan_balance: 120_000
+        })
+
+      %{totals: totals} = Vault.dashboard_summary()
+      assert Decimal.equal?(Map.new(totals)["USD"], Decimal.new(180_000))
+    end
+
     test "dashboard_summary/0 totals per currency, never across them", %{scope: scope} do
       {:ok, _} =
         Vault.create_asset(scope, %{name: "US House", estimated_value: 100, currency: "USD"})

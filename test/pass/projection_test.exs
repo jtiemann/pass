@@ -178,6 +178,133 @@ defmodule Pass.Vault.ProjectionTest do
     end
   end
 
+  describe "real estate: loans, HOA, and rent" do
+    test "paying a 0% loan moves pocket money into equity — zero net gain at 0% growth" do
+      # 300k property flat, 100k loan at 0%, 1,000/mo payments, 5 years:
+      # 60k paid, balance 40k, equity 260k, ops cash −60k → total 200k = start.
+      row =
+        Projection.project_asset(
+          asset(
+            category: :real_estate,
+            estimated_value: Decimal.new(300_000),
+            annual_return_pct: Decimal.new(0),
+            loan_balance: Decimal.new(100_000),
+            loan_interest_pct: Decimal.new(0),
+            loan_monthly_payment: Decimal.new(1000)
+          ),
+          5
+        )
+
+      assert_in_delta row.current, 200_000.0, 0.01
+      assert_in_delta row.loan_balance_end, 40_000.0, 0.01
+      assert_in_delta row.future_value, 260_000.0, 0.01
+      assert_in_delta row.ops_cash, -60_000.0, 0.01
+      assert_in_delta row.total, 200_000.0, 0.01
+      assert_in_delta row.gain, 0.0, 0.01
+    end
+
+    test "an unpaid loan compounds monthly and erodes equity" do
+      # 100k at 6%/yr, no payments, 5 years: 100k·(1.005)^60 ≈ 134,885.
+      row =
+        Projection.project_asset(
+          asset(
+            category: :real_estate,
+            estimated_value: Decimal.new(300_000),
+            annual_return_pct: Decimal.new(0),
+            loan_balance: Decimal.new(100_000),
+            loan_interest_pct: Decimal.new(6)
+          ),
+          5
+        )
+
+      expected_balance = 100_000 * :math.pow(1.005, 60)
+      assert_in_delta row.loan_balance_end, expected_balance, 1.0
+      assert_in_delta row.gain, 100_000 - expected_balance, 1.0
+      assert row.loan_paid_off_at == nil
+    end
+
+    test "detects the loan payoff year, after which payments stop" do
+      # 10k at 0%, 1,000/mo: paid off in month 10 of year 1. Total paid = 10k.
+      row =
+        Projection.project_asset(
+          asset(
+            category: :real_estate,
+            estimated_value: Decimal.new(100_000),
+            annual_return_pct: Decimal.new(0),
+            loan_balance: Decimal.new(10_000),
+            loan_interest_pct: Decimal.new(0),
+            loan_monthly_payment: Decimal.new(1000)
+          ),
+          5
+        )
+
+      assert row.loan_paid_off_at == 1
+      assert_in_delta row.ops_cash, -10_000.0, 0.01
+      assert_in_delta row.future_value, 100_000.0, 0.01
+    end
+
+    test "rent minus HOA accumulates as operating cash" do
+      # 2,000/mo rent − 300/mo HOA = 20,400/yr × 5 = 102,000.
+      row =
+        Projection.project_asset(
+          asset(
+            category: :real_estate,
+            estimated_value: Decimal.new(250_000),
+            annual_return_pct: Decimal.new(0),
+            rent_monthly: Decimal.new(2000),
+            hoa_monthly: Decimal.new(300)
+          ),
+          5
+        )
+
+      assert_in_delta row.ops_cash, 102_000.0, 0.01
+      assert_in_delta row.gain, 102_000.0, 0.01
+    end
+
+    test "a money-losing property shows a negative contribution" do
+      # HOA 500/mo, no rent, flat value: −6,000/yr.
+      row =
+        Projection.project_asset(
+          asset(
+            category: :real_estate,
+            estimated_value: Decimal.new(250_000),
+            annual_return_pct: Decimal.new(0),
+            hoa_monthly: Decimal.new(500)
+          ),
+          5
+        )
+
+      assert_in_delta row.gain, -30_000.0, 0.01
+    end
+
+    test "the full picture: appreciation + rent − HOA − mortgage" do
+      # 300k @ 4%, 100k loan @ 0% with 1k/mo, rent 2k/mo, HOA 300/mo, 5y:
+      #   value: 300k·1.04^5 ≈ 364,995.87; loan 40k → equity ≈ 324,995.87
+      #   ops: (24,000 − 3,600 − 12,000)·5 = 42,000
+      #   gain = equity + ops − 200k
+      row =
+        Projection.project_asset(
+          asset(
+            category: :real_estate,
+            estimated_value: Decimal.new(300_000),
+            annual_return_pct: Decimal.new(4),
+            loan_balance: Decimal.new(100_000),
+            loan_interest_pct: Decimal.new(0),
+            loan_monthly_payment: Decimal.new(1000),
+            rent_monthly: Decimal.new(2000),
+            hoa_monthly: Decimal.new(300)
+          ),
+          5
+        )
+
+      expected_value = 300_000 * :math.pow(1.04, 5)
+      assert_in_delta row.value_end, expected_value, 1.0
+      assert_in_delta row.future_value, expected_value - 40_000, 1.0
+      assert_in_delta row.ops_cash, 42_000.0, 0.01
+      assert_in_delta row.gain, expected_value - 40_000 + 42_000 - 200_000, 1.0
+    end
+  end
+
   describe "reallocation of depleted draws" do
     defp with_id(attrs), do: asset(Keyword.put_new(attrs, :id, Ecto.UUID.generate()))
 

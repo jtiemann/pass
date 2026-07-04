@@ -26,6 +26,19 @@ defmodule PassWeb.AssetLive.Show do
 
       <.list>
         <:item title="Estimated value">{format_value(@asset)}</:item>
+        <:item :if={@asset.loan_balance} title="Loan">
+          {PassWeb.Format.money(@asset.loan_balance, "#{@asset.currency} ")}
+          <span :if={@asset.loan_interest_pct}>@ {@asset.loan_interest_pct}%</span>
+          <span :if={@asset.loan_monthly_payment}>
+            · {PassWeb.Format.money(@asset.loan_monthly_payment, "#{@asset.currency} ")}/mo
+          </span>
+        </:item>
+        <:item :if={@asset.hoa_monthly} title="HOA fee">
+          {PassWeb.Format.money(@asset.hoa_monthly, "#{@asset.currency} ")}/mo
+        </:item>
+        <:item :if={@asset.rent_monthly} title="Rental income">
+          {PassWeb.Format.money(@asset.rent_monthly, "#{@asset.currency} ")}/mo
+        </:item>
         <:item title="Location">{@asset.location || "—"}</:item>
         <:item title="Status">{@asset.status}</:item>
         <:item :if={@asset.description} title="Description">{@asset.description}</:item>

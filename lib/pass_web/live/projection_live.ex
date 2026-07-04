@@ -181,7 +181,23 @@ defmodule PassWeb.ProjectionLive do
                     {Asset.humanize_category(row.asset.category)}
                   </div>
                 </td>
-                <td>{money(row.current, row.asset.currency)}</td>
+                <td>
+                  {money(row.current, row.asset.currency)}
+                  <div :if={row.loan_balance_start > 0} class="text-xs text-base-content/60">
+                    equity after {money(row.loan_balance_start, row.asset.currency)} loan
+                  </div>
+                  <div
+                    :if={row.asset.rent_monthly || row.asset.hoa_monthly}
+                    class="text-xs text-base-content/60"
+                  >
+                    <span :if={row.asset.rent_monthly}>
+                      rent {Format.money(row.asset.rent_monthly, "")}/mo
+                    </span>
+                    <span :if={row.asset.hoa_monthly}>
+                      · HOA {Format.money(row.asset.hoa_monthly, "")}/mo
+                    </span>
+                  </div>
+                </td>
                 <td>
                   {format_pct(row.return_pct)}
                   <span :if={row.assumed?} class="badge badge-ghost badge-xs align-middle ml-1">
@@ -207,6 +223,12 @@ defmodule PassWeb.ProjectionLive do
                   {money(row.total, row.asset.currency)}
                   <div :if={row.depleted_at} class="text-xs text-error">
                     depletes in year {row.depleted_at}
+                  </div>
+                  <div :if={row.loan_paid_off_at} class="text-xs text-success">
+                    loan paid off in year {row.loan_paid_off_at}
+                  </div>
+                  <div :if={row.loan_balance_end > 0.005} class="text-xs text-base-content/60">
+                    {money(row.loan_balance_end, row.asset.currency)} loan remaining
                   </div>
                 </td>
                 <td class={tone_class(row.gain)}>{signed_money(row.gain, row.asset.currency)}</td>
