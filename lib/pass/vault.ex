@@ -67,6 +67,9 @@ defmodule Pass.Vault do
   @doc "Fetches an asset by id, raising if missing."
   def get_asset!(id), do: Repo.get!(Asset, id)
 
+  @doc "Fetches an asset by id, or nil."
+  def get_asset(id), do: Repo.get(Asset, id)
+
   @doc "Builds a changeset for form rendering."
   def change_asset(%Asset{} = asset, attrs \\ %{}) do
     Asset.changeset(asset, attrs)

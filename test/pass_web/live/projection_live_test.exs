@@ -43,6 +43,27 @@ defmodule PassWeb.ProjectionLiveTest do
       assert html =~ "USD 25,937.42"
     end
 
+    test "renders a 20-year value chart with per-year tooltips", %{conn: conn, scope: scope} do
+      {:ok, _} =
+        Pass.Vault.create_asset(scope, %{
+          name: "Index fund",
+          category: :financial,
+          estimated_value: 10_000,
+          currency: "USD",
+          annual_return_pct: 10
+        })
+
+      {:ok, _lv, html} = live(conn, ~p"/projections")
+
+      # Default card horizon is 5y, but the chart still spans 20.
+      assert html =~ "Value over 20 years"
+      assert html =~ "<svg"
+      assert html =~ "Year 0: USD 10,000.00"
+      # 10,000 · 1.1^20 = 67,275.00
+      assert html =~ "Year 20: USD 67,275.00"
+      assert html =~ "20y"
+    end
+
     test "shows draws, the drawn-for-expenses total, and depletion warnings", %{
       conn: conn,
       scope: scope

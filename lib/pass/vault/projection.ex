@@ -147,10 +147,21 @@ defmodule Pass.Vault.Projection do
          }}
       end)
 
-    {states, unfunded, first_gap_year} =
-      Enum.reduce(1..years//1, {init_states, 0.0, nil}, fn year, acc ->
-        simulate_year(year, params, acc, reallocations, id_to_idx)
+    starting_total = Enum.reduce(params, 0.0, fn p, acc -> acc + p.pv - p.balance end)
+
+    {states, unfunded, first_gap_year, series_reversed} =
+      Enum.reduce(1..years//1, {init_states, 0.0, nil, []}, fn year,
+                                                               {states, unfunded, gap, series} ->
+        {states, unfunded, gap} =
+          simulate_year(year, params, {states, unfunded, gap}, reallocations, id_to_idx)
+
+        {states, unfunded, gap, [group_total(states) | series]}
       end)
+
+    # Vault value at each year end (index 0 = today): equity plus family cash
+    # generated so far. Drawn money is spent elsewhere, so it isn't included —
+    # the curve dips honestly under heavy draws.
+    series = [starting_total | Enum.reverse(series_reversed)]
 
     rows =
       Enum.map(params, fn p ->
@@ -189,10 +200,17 @@ defmodule Pass.Vault.Projection do
       drawn: sum_by(rows, fn {row, _} -> row.total_drawn end),
       gain: sum_by(rows, fn {row, _} -> row.gain end),
       unfunded: unfunded,
-      first_gap_year: first_gap_year
+      first_gap_year: first_gap_year,
+      series: series
     }
 
     {rows, totals}
+  end
+
+  defp group_total(states) do
+    Enum.reduce(states, 0.0, fn {_idx, state}, acc ->
+      acc + state.value - state.balance + state.cash + state.ops_cash
+    end)
   end
 
   defp simulate_year(year, params, {states, unfunded, first_gap}, reallocations, id_to_idx) do

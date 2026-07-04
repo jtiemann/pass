@@ -381,13 +381,15 @@ defmodule PassWeb.AssetLive.Grid do
   end
 
   # Live updates from other members (own saves also arrive here — harmless).
+  # The asset is reloaded rather than trusting the broadcast payload: it
+  # guarantees fresh data, and in tests it keeps concurrent sandboxes from
+  # bleeding rows into each other through the shared PubSub topic.
   @impl true
-  def handle_info({:created, asset}, socket) do
-    {:noreply, stream_insert(socket, :assets, asset)}
-  end
-
-  def handle_info({:updated, asset}, socket) do
-    {:noreply, stream_insert(socket, :assets, asset)}
+  def handle_info({event, %Asset{id: id}}, socket) when event in [:created, :updated] do
+    case Vault.get_asset(id) do
+      nil -> {:noreply, socket}
+      asset -> {:noreply, stream_insert(socket, :assets, asset)}
+    end
   end
 
   def handle_info({:deleted, asset}, socket) do

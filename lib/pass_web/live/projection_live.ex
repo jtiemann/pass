@@ -85,6 +85,18 @@ defmodule PassWeb.ProjectionLive do
         </div>
       </div>
 
+      <section :if={@charts != []} class="mt-8 space-y-6">
+        <div :for={{currency, series} <- @charts}>
+          <h2 class="text-lg font-semibold mb-2">
+            Value over {@chart_years} years
+            <span :if={length(@charts) > 1} class="text-base-content/60">({currency})</span>
+          </h2>
+          <div class="rounded-box border border-base-300 bg-base-200/30 p-4">
+            <.value_chart series={series} currency={currency} years={@chart_years} />
+          </div>
+        </div>
+      </section>
+
       <section :if={@prompts != []} class="mt-8 space-y-4">
         <h2 class="text-lg font-semibold">Keep the money flowing</h2>
         <div
@@ -250,6 +262,139 @@ defmodule PassWeb.ProjectionLive do
     """
   end
 
+  # Chart canvas: fixed viewBox, scaled by CSS. Kept as plain SVG so it themes
+  # itself through the CSS variables and needs no JS.
+  @chart_w 720
+  @chart_h 260
+  @pad_l 64
+  @pad_r 14
+  @pad_t 14
+  @pad_b 28
+
+  attr :series, :list, required: true
+  attr :currency, :string, required: true
+  attr :years, :integer, required: true
+
+  defp value_chart(assigns) do
+    assigns = assign(assigns, :geometry, chart_geometry(assigns.series))
+
+    ~H"""
+    <svg
+      viewBox={"0 0 #{@geometry.w} #{@geometry.h}"}
+      class="w-full"
+      role="img"
+      aria-label={"Projected #{@currency} value over #{@years} years"}
+    >
+      <%!-- horizontal gridlines + y labels --%>
+      <g :for={{label, y} <- @geometry.y_ticks}>
+        <line
+          x1={@geometry.pad_l}
+          y1={y}
+          x2={@geometry.w - @geometry.pad_r}
+          y2={y}
+          stroke="var(--color-base-300)"
+          stroke-width="1"
+        />
+        <text
+          x={@geometry.pad_l - 8}
+          y={y + 4}
+          text-anchor="end"
+          font-size="12"
+          fill="var(--color-base-content)"
+          opacity="0.6"
+        >
+          {label}
+        </text>
+      </g>
+
+      <%!-- x labels --%>
+      <text
+        :for={{label, x} <- @geometry.x_ticks}
+        x={x}
+        y={@geometry.h - 8}
+        text-anchor="middle"
+        font-size="12"
+        fill="var(--color-base-content)"
+        opacity="0.6"
+      >
+        {label}
+      </text>
+
+      <polygon points={@geometry.area} fill="var(--color-primary)" fill-opacity="0.12" />
+      <polyline
+        points={@geometry.line}
+        fill="none"
+        stroke="var(--color-primary)"
+        stroke-width="2.5"
+        stroke-linejoin="round"
+      />
+
+      <circle
+        :for={{x, y, year, value} <- @geometry.points}
+        cx={x}
+        cy={y}
+        r="3.5"
+        fill="var(--color-primary)"
+      >
+        <title>Year {year}: {money(value, @currency)}</title>
+      </circle>
+    </svg>
+    """
+  end
+
+  defp chart_geometry(series) do
+    count = length(series)
+    plot_w = @chart_w - @pad_l - @pad_r
+    plot_h = @chart_h - @pad_t - @pad_b
+    dims = %{w: @chart_w, h: @chart_h, pad_l: @pad_l, pad_r: @pad_r}
+
+    y_min = min(0.0, Enum.min(series))
+    y_max = max(Enum.max(series) * 1.05, y_min + 1.0)
+    x_step = plot_w / max(count - 1, 1)
+
+    scale_y = fn value -> @pad_t + plot_h * (1 - (value - y_min) / (y_max - y_min)) end
+
+    points =
+      series
+      |> Enum.with_index()
+      |> Enum.map(fn {value, year} ->
+        {Float.round(@pad_l + year * x_step, 1), Float.round(scale_y.(value), 1), year, value}
+      end)
+
+    line = Enum.map_join(points, " ", fn {x, y, _year, _value} -> "#{x},#{y}" end)
+
+    baseline_y = Float.round(scale_y.(max(y_min, 0.0)), 1)
+    {first_x, _, _, _} = List.first(points)
+    {last_x, _, _, _} = List.last(points)
+    area = "#{first_x},#{baseline_y} #{line} #{last_x},#{baseline_y}"
+
+    y_ticks =
+      for step <- 0..4 do
+        value = y_min + (y_max - y_min) * step / 4
+        {compact_number(value), Float.round(scale_y.(value), 1)}
+      end
+
+    label_every = max(div(count - 1, 5), 1)
+
+    x_ticks =
+      for {x, _y, year, _value} <- points,
+          rem(year, label_every) == 0 or year == count - 1,
+          do: {"#{year}y", x}
+
+    Map.merge(dims, %{points: points, line: line, area: area, y_ticks: y_ticks, x_ticks: x_ticks})
+  end
+
+  defp compact_number(value) do
+    sign = if value < 0, do: "-", else: ""
+    abs = abs(value)
+
+    cond do
+      abs >= 1_000_000 -> "#{sign}#{Float.round(abs / 1_000_000, 1)}M"
+      abs >= 1_000 -> "#{sign}#{round(abs / 1_000)}k"
+      true -> "#{sign}#{round(abs)}"
+    end
+  end
+
   attr :label, :string, required: true
   attr :value, :string, required: true
   attr :tone, :string, default: nil
@@ -324,13 +469,15 @@ defmodule PassWeb.ProjectionLive do
 
   defp project(socket) do
     assets = Vault.list_assets()
+    allocations = fractions(socket.assigns.reallocations)
+    projection = Projection.project_assets(assets, socket.assigns.years, allocations)
 
-    projection =
-      Projection.project_assets(
-        assets,
-        socket.assigns.years,
-        fractions(socket.assigns.reallocations)
-      )
+    # The chart always looks at least 20 years out, whatever the card horizon.
+    chart_years = max(socket.assigns.years, 20)
+
+    charts =
+      Projection.project_assets(assets, chart_years, allocations).totals
+      |> Enum.map(fn {currency, totals} -> {currency, totals.series} end)
 
     prompts =
       projection.rows
@@ -348,6 +495,8 @@ defmodule PassWeb.ProjectionLive do
     socket
     |> assign(:assets, assets)
     |> assign(:projection, projection)
+    |> assign(:charts, charts)
+    |> assign(:chart_years, chart_years)
     |> assign(:prompts, prompts)
   end
 

@@ -305,6 +305,47 @@ defmodule Pass.Vault.ProjectionTest do
     end
   end
 
+  describe "yearly value series" do
+    test "records the vault value at each year end, starting from today" do
+      row_asset = asset(estimated_value: Decimal.new(1000), annual_return_pct: Decimal.new(10))
+
+      %{totals: [{"USD", %{series: series}}]} = Projection.project_assets([row_asset], 2)
+
+      assert length(series) == 3
+      assert_in_delta Enum.at(series, 0), 1000.0, 0.01
+      assert_in_delta Enum.at(series, 1), 1100.0, 0.01
+      assert_in_delta Enum.at(series, 2), 1210.0, 0.01
+    end
+
+    test "the series dips as draws spend the vault down" do
+      spender =
+        asset(
+          estimated_value: Decimal.new(1000),
+          annual_return_pct: Decimal.new(0),
+          annual_draw: Decimal.new(400)
+        )
+
+      %{totals: [{"USD", %{series: series}}]} = Projection.project_assets([spender], 4)
+
+      assert Enum.map(series, &Float.round(&1, 2)) == [1000.0, 600.0, 200.0, 0.0, 0.0]
+    end
+
+    test "the series includes accumulated cash (dividends, rent)" do
+      rental =
+        asset(
+          category: :real_estate,
+          estimated_value: Decimal.new(100_000),
+          annual_return_pct: Decimal.new(0),
+          rent_monthly: Decimal.new(1000)
+        )
+
+      %{totals: [{"USD", %{series: series}}]} = Projection.project_assets([rental], 3)
+
+      assert Enum.map(series, &Float.round(&1, 2)) ==
+               [100_000.0, 112_000.0, 124_000.0, 136_000.0]
+    end
+  end
+
   describe "reallocation of depleted draws" do
     defp with_id(attrs), do: asset(Keyword.put_new(attrs, :id, Ecto.UUID.generate()))
 
