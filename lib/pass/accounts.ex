@@ -88,6 +88,15 @@ defmodule Pass.Accounts do
     |> Repo.insert()
   end
 
+  @doc """
+  Whether public self-registration is available. It only is while the vault has
+  no users at all (to bootstrap the first owner); afterwards, new members join
+  by invitation only. Enforced by the registration LiveView.
+  """
+  def registration_open? do
+    Repo.aggregate(User, :count) == 0
+  end
+
   @doc "Lists all users, owners first then by email."
   def list_users do
     Repo.all(from u in User, order_by: [asc: u.role, asc: u.email])

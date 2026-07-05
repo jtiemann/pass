@@ -93,7 +93,8 @@ defmodule Pass.Accounts.Passkeys do
   def verify(%User{} = user, credential_id, auth_data_bin, sig, client_data_json, challenge) do
     with {:ok, auth_data} <-
            Wax.authenticate(credential_id, auth_data_bin, sig, client_data_json, challenge),
-         %UserKey{} = key <- get_user_key_by_credential_id(user, credential_id) do
+         %UserKey{} = key <- get_user_key_by_credential_id(user, credential_id),
+         :ok <- check_sign_count(auth_data.sign_count, key.sign_count) do
       key
       |> UserKey.usage_changeset(%{
         sign_count: auth_data.sign_count,
@@ -105,6 +106,16 @@ defmodule Pass.Accounts.Passkeys do
       {:error, _} = error -> error
     end
   end
+
+  @doc """
+  WebAuthn clone detection (assertion verification step 17): a signature
+  counter that goes backwards or repeats means two authenticators share the
+  same credential — reject. Counters stuck at zero are allowed, since many
+  platform authenticators (passkeys synced via iCloud/Google) never increment.
+  """
+  def check_sign_count(new_count, _stored) when new_count == 0, do: :ok
+  def check_sign_count(new_count, stored) when new_count > stored, do: :ok
+  def check_sign_count(_new_count, _stored), do: {:error, :possible_credential_clone}
 
   defp get_user_key_by_credential_id(%User{id: user_id}, credential_id) do
     Repo.get_by(UserKey, user_id: user_id, credential_id: credential_id)

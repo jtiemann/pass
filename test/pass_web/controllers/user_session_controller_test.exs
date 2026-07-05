@@ -129,6 +129,30 @@ defmodule PassWeb.UserSessionControllerTest do
     end
   end
 
+  describe "POST /users/update-password with a stale session" do
+    test "redirects to re-authenticate instead of crashing", %{conn: conn, user: user} do
+      user = set_password(user)
+
+      stale = DateTime.add(DateTime.utc_now(:second), -11, :minute)
+
+      conn =
+        conn
+        |> log_in_user(user, token_authenticated_at: stale)
+        |> post(~p"/users/update-password", %{
+          "user" => %{
+            "password" => "brand new passphrase!",
+            "password_confirmation" => "brand new passphrase!"
+          }
+        })
+
+      assert redirected_to(conn) == ~p"/users/log-in"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "re-authenticate"
+
+      # The old password still works — nothing was changed.
+      assert Pass.Accounts.get_user_by_email_and_password(user.email, valid_user_password())
+    end
+  end
+
   describe "DELETE /users/log-out" do
     test "logs the user out", %{conn: conn, user: user} do
       conn = conn |> log_in_user(user) |> delete(~p"/users/log-out")

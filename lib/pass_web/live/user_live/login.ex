@@ -15,11 +15,15 @@ defmodule PassWeb.UserLive.Login do
               <%= if @current_scope do %>
                 You need to reauthenticate to perform sensitive actions on your account.
               <% else %>
-                Don't have an account? <.link
-                  navigate={~p"/users/register"}
-                  class="font-semibold text-brand hover:underline"
-                  phx-no-format
-                >Sign up</.link> for an account now.
+                <%= if @registration_open do %>
+                  Don't have an account? <.link
+                    navigate={~p"/users/register"}
+                    class="font-semibold text-brand hover:underline"
+                    phx-no-format
+                  >Sign up</.link> for an account now.
+                <% else %>
+                  New members join by invitation from a vault owner.
+                <% end %>
               <% end %>
             </:subtitle>
           </.header>
@@ -103,7 +107,12 @@ defmodule PassWeb.UserLive.Login do
 
     form = to_form(%{"email" => email}, as: "user")
 
-    {:ok, assign(socket, form: form, trigger_submit: false)}
+    {:ok,
+     assign(socket,
+       form: form,
+       trigger_submit: false,
+       registration_open: Accounts.registration_open?()
+     )}
   end
 
   @impl true
@@ -112,11 +121,11 @@ defmodule PassWeb.UserLive.Login do
   end
 
   def handle_event("submit_magic", %{"user" => %{"email" => email}}, socket) do
-    if user = Accounts.get_user_by_email(email) do
-      Accounts.deliver_login_instructions(
-        user,
-        &url(~p"/users/log-in/#{&1}")
-      )
+    # Cap login-link emails per address so the server can't be used to flood a
+    # mailbox. The response is identical either way (no enumeration signal).
+    with :ok <- Pass.RateLimiter.check("magic:#{String.downcase(email)}", 3, 3600),
+         %Accounts.User{} = user <- Accounts.get_user_by_email(email) do
+      Accounts.deliver_login_instructions(user, &url(~p"/users/log-in/#{&1}"))
     end
 
     info =

@@ -30,6 +30,25 @@ defmodule Pass.Vault.Credential do
     |> validate_required([:label])
     |> validate_length(:label, max: 200)
     |> nilify_blanks([:username, :url, :secret, :notes])
+    |> normalize_url()
+    |> validate_format(:url, ~r{^https?://}i, message: "must be an http(s) address")
+  end
+
+  # The url is rendered as a clickable link for other family members, so only
+  # web addresses are allowed (no javascript:/data:/file: schemes). A bare
+  # "bank.com" is treated as https for convenience.
+  defp normalize_url(changeset) do
+    case get_change(changeset, :url) do
+      nil ->
+        changeset
+
+      url ->
+        if String.contains?(url, ":") or String.starts_with?(url, "//") do
+          changeset
+        else
+          put_change(changeset, :url, "https://" <> url)
+        end
+    end
   end
 
   # Treat empty strings from form inputs as nil so we don't store blank ciphertext.

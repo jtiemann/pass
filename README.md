@@ -200,7 +200,7 @@ To run inside an interactive shell: `iex -S mix phx.server`.
 | Variable           | Default      | Notes                                                  |
 | ------------------ | ------------ | ------------------------------------------------------ |
 | `PASS_DB_PASSWORD` | `postgres`   | Password for the local Postgres `postgres` user.       |
-| `PASS_CLOAK_KEY`   | dev-only key | Base64 32-byte encryption key. A **dev-only** default is baked in for local use; override to use your own. |
+| `PASS_CLOAK_KEY`   | dev-only key | Base64 32-byte encryption key. A **dev-only** default is baked in for local use — but it's public, so **set your own before storing real secrets** (in `.env` works). After setting it, run `mix pass.rotate_key` to re-encrypt existing data. |
 
 In development, `PASS_DB_PASSWORD` can also live in an untracked **`.env`** file at
 the project root (`PASS_DB_PASSWORD=yourpassword`) — handy for editors and tools
@@ -229,8 +229,9 @@ edit `config/dev.exs` / `config/test.exs`.
 ## First run
 
 1. Visit **http://localhost:4000** and click **Sign up**.
-2. **The first account to register becomes the `owner`** (full access + member management).
-   Subsequent sign-ups are `member`s; an owner can change roles under **Members**.
+2. **The first account to register becomes the `owner`** (full access + member
+   management) — and **registration then closes**: everyone else joins by
+   invitation from an owner (see **Members**).
 3. Check **http://localhost:4000/dev/mailbox** for the confirmation email (dev uses a
    local mailbox — no real mail is sent).
 4. Set a password under **Settings**.

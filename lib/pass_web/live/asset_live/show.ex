@@ -439,15 +439,19 @@ defmodule PassWeb.AssetLive.Show do
   end
 
   def handle_event("reveal", %{"id" => id}, socket) do
-    credential = Vault.get_credential!(socket.assigns.asset, id)
-    audit(socket, "credential.revealed", credential.id, credential.label)
-    {:noreply, push_event(socket, "secret:show", %{id: id, value: credential.secret || ""})}
+    guard_fresh_auth(socket, fn ->
+      credential = Vault.get_credential!(socket.assigns.asset, id)
+      audit(socket, "credential.revealed", credential.id, credential.label)
+      {:noreply, push_event(socket, "secret:show", %{id: id, value: credential.secret || ""})}
+    end)
   end
 
   def handle_event("copy", %{"id" => id}, socket) do
-    credential = Vault.get_credential!(socket.assigns.asset, id)
-    audit(socket, "credential.copied", credential.id, credential.label)
-    {:noreply, push_event(socket, "secret:copy", %{id: id, value: credential.secret || ""})}
+    guard_fresh_auth(socket, fn ->
+      credential = Vault.get_credential!(socket.assigns.asset, id)
+      audit(socket, "credential.copied", credential.id, credential.label)
+      {:noreply, push_event(socket, "secret:copy", %{id: id, value: credential.secret || ""})}
+    end)
   end
 
   def handle_event("validate_document", _params, socket), do: {:noreply, socket}
@@ -546,6 +550,20 @@ defmodule PassWeb.AssetLive.Show do
       entity_id: entity_id,
       summary: summary
     )
+  end
+
+  # Revealing/copying a secret requires a recent authentication (same 10-minute
+  # sudo window as passkey management) — an unattended logged-in laptop should
+  # not give up the vault's crown jewels with one click.
+  defp guard_fresh_auth(socket, fun) do
+    if Pass.Accounts.sudo_mode?(socket.assigns.current_scope.user, -10) do
+      fun.()
+    else
+      {:noreply,
+       socket
+       |> put_flash(:error, "Please re-authenticate to view secrets.")
+       |> push_navigate(to: ~p"/users/log-in")}
+    end
   end
 
   # Runs the given write action only if the current scope is allowed to write.

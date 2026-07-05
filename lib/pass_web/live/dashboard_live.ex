@@ -99,11 +99,23 @@ defmodule PassWeb.DashboardLive do
           passkeys and encrypted at rest.
         </p>
         <div class="flex justify-center gap-3">
-          <.link navigate={~p"/users/register"} class="btn btn-primary btn-lg">
+          <.link
+            :if={@registration_open}
+            navigate={~p"/users/register"}
+            class="btn btn-primary btn-lg"
+          >
             Get started
           </.link>
-          <.link navigate={~p"/users/log-in"} class="btn btn-ghost btn-lg">Log in</.link>
+          <.link
+            navigate={~p"/users/log-in"}
+            class={["btn btn-lg", (@registration_open && "btn-ghost") || "btn-primary"]}
+          >
+            Log in
+          </.link>
         </div>
+        <p :if={!@registration_open} class="text-sm text-base-content/60">
+          New members join by invitation from a vault owner.
+        </p>
       </div>
     </Layouts.app>
     """
@@ -132,7 +144,7 @@ defmodule PassWeb.DashboardLive do
        |> assign(:summary, Vault.dashboard_summary())
        |> assign(:activity, recent_activity(socket.assigns.current_scope))}
     else
-      {:ok, socket}
+      {:ok, assign(socket, :registration_open, Pass.Accounts.registration_open?())}
     end
   end
 

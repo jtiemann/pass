@@ -28,6 +28,18 @@ config :pass,
 # node_modules symlink isn't needed. Silences a noisy Windows :eperm warning.
 config :phoenix_live_view, :colocated_assets, disable_symlink_warning: true
 
+# Never log the vault's sensitive values. Applies to controller params AND
+# LiveView event params (which otherwise appear in debug logs in dev).
+config :phoenix, :filter_parameters, [
+  "password",
+  "secret",
+  "notes",
+  "code",
+  "token",
+  "assertion",
+  "recovery"
+]
+
 # Configure the endpoint
 config :pass, PassWeb.Endpoint,
   url: [host: "localhost"],

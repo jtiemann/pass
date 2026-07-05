@@ -6,23 +6,10 @@ config :wax_,
   origin: "http://localhost:4000",
   rp_id: "localhost"
 
-# Encryption at rest (Cloak). DEV-ONLY default key — protects only local throwaway
-# data. Override with PASS_CLOAK_KEY. Production requires a real key (see runtime.exs).
-config :pass, Pass.Encryption.Vault,
-  ciphers: [
-    default:
-      {Cloak.Ciphers.AES.GCM,
-       tag: "AES.GCM.V1",
-       key:
-         Base.decode64!(
-           System.get_env("PASS_CLOAK_KEY") || "SnnlI94TTRVzlJCBKEzbmwylfVJT8rfkOo1kXFmKNf0="
-         )}
-  ]
-
-# Local dev DB password, read from the environment so no secret is committed.
-# Set PASS_DB_PASSWORD in your shell, or put it in an untracked .env file at the
-# project root (useful for editors/preview runners that spawn the server without
-# a shell profile). Defaults to the conventional "postgres".
+# Local dev settings, read from the environment so no secret is committed.
+# Set values in your shell, or put them in an untracked .env file at the
+# project root (useful for editors/preview runners that spawn the server
+# without a shell profile).
 dotenv =
   case File.read(Path.expand("../.env", __DIR__)) do
     {:ok, contents} ->
@@ -38,6 +25,26 @@ dotenv =
   end
 
 db_password = System.get_env("PASS_DB_PASSWORD") || dotenv["PASS_DB_PASSWORD"] || "postgres"
+
+# Encryption at rest (Cloak). Without a PASS_CLOAK_KEY, a DEV-ONLY committed key
+# is used — fine for throwaway data, NOT for real secrets (the key is public on
+# GitHub). Set PASS_CLOAK_KEY (env or .env) to use your own key; the public key
+# stays registered as a retired cipher so existing rows still decrypt — run
+# `mix pass.rotate_key` afterwards to re-encrypt everything under your key.
+dev_public_key = Base.decode64!("SnnlI94TTRVzlJCBKEzbmwylfVJT8rfkOo1kXFmKNf0=")
+cloak_key = System.get_env("PASS_CLOAK_KEY") || dotenv["PASS_CLOAK_KEY"]
+
+cloak_ciphers =
+  if cloak_key do
+    [
+      default: {Cloak.Ciphers.AES.GCM, tag: "AES.GCM.V2", key: Base.decode64!(cloak_key)},
+      retired: {Cloak.Ciphers.AES.GCM, tag: "AES.GCM.V1", key: dev_public_key}
+    ]
+  else
+    [default: {Cloak.Ciphers.AES.GCM, tag: "AES.GCM.V1", key: dev_public_key}]
+  end
+
+config :pass, Pass.Encryption.Vault, ciphers: cloak_ciphers
 
 config :pass, Pass.Repo,
   username: "postgres",

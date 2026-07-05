@@ -116,7 +116,7 @@ defmodule PassWeb.Layouts do
       </li>
     <% else %>
       <li><.link navigate={~p"/users/log-in"} class="btn btn-ghost btn-sm">Log in</.link></li>
-      <li>
+      <li :if={Pass.Accounts.registration_open?()}>
         <.link navigate={~p"/users/register"} class="btn btn-primary btn-sm">Sign up</.link>
       </li>
     <% end %>

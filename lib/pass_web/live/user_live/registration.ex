@@ -49,13 +49,36 @@ defmodule PassWeb.UserLive.Registration do
   end
 
   def mount(_params, _session, socket) do
-    changeset = Accounts.change_user_email(%User{}, %{}, validate_unique: false)
-
-    {:ok, assign_form(socket, changeset), temporary_assigns: [form: nil]}
+    if Accounts.registration_open?() do
+      changeset = Accounts.change_user_email(%User{}, %{}, validate_unique: false)
+      {:ok, assign_form(socket, changeset), temporary_assigns: [form: nil]}
+    else
+      {:ok,
+       socket
+       |> put_flash(:error, "Registration is by invitation — ask a vault owner to invite you.")
+       |> redirect(to: ~p"/users/log-in")}
+    end
   end
 
   @impl true
   def handle_event("save", %{"user" => user_params}, socket) do
+    # Re-checked at submit time in case the first owner registered since mount.
+    if Accounts.registration_open?() do
+      register(socket, user_params)
+    else
+      {:noreply,
+       socket
+       |> put_flash(:error, "Registration is by invitation — ask a vault owner to invite you.")
+       |> push_navigate(to: ~p"/users/log-in")}
+    end
+  end
+
+  def handle_event("validate", %{"user" => user_params}, socket) do
+    changeset = Accounts.change_user_email(%User{}, user_params, validate_unique: false)
+    {:noreply, assign_form(socket, Map.put(changeset, :action, :validate))}
+  end
+
+  defp register(socket, user_params) do
     case Accounts.register_user(user_params) do
       {:ok, user} ->
         {:ok, _} =
@@ -75,11 +98,6 @@ defmodule PassWeb.UserLive.Registration do
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}
     end
-  end
-
-  def handle_event("validate", %{"user" => user_params}, socket) do
-    changeset = Accounts.change_user_email(%User{}, user_params, validate_unique: false)
-    {:noreply, assign_form(socket, Map.put(changeset, :action, :validate))}
   end
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do

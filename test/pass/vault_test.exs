@@ -147,6 +147,25 @@ defmodule Pass.VaultTest do
       assert cred.secret == nil
     end
 
+    test "rejects non-web url schemes (rendered as links for others)", %{asset: asset} do
+      assert {:error, changeset} =
+               Vault.create_credential(asset, %{label: "X", url: "javascript:alert(1)"})
+
+      assert %{url: _} = errors_on(changeset)
+
+      assert {:error, _} = Vault.create_credential(asset, %{label: "X", url: "data:text/html,hi"})
+    end
+
+    test "bare domains are normalized to https", %{asset: asset} do
+      {:ok, cred} = Vault.create_credential(asset, %{label: "Bank", url: "chase.com/login"})
+      assert cred.url == "https://chase.com/login"
+
+      {:ok, cred} =
+        Vault.create_credential(asset, %{label: "Bank2", url: "http://old.example.com"})
+
+      assert cred.url == "http://old.example.com"
+    end
+
     test "list_credentials/1 returns only that asset's credentials", %{scope: scope, asset: asset} do
       {:ok, other} = Vault.create_asset(scope, %{name: "Other"})
       {:ok, a} = Vault.create_credential(asset, %{label: "A"})

@@ -106,6 +106,15 @@ defmodule PassWeb.AssetLiveTest do
       assert_push_event(lv, "secret:show", %{id: _id, value: "s3cret"})
     end
 
+    @tag token_authenticated_at: DateTime.add(DateTime.utc_now(:second), -11, :minute)
+    test "reveal requires a recent authentication", %{conn: conn, asset: asset} do
+      {:ok, credential} = Pass.Vault.create_credential(asset, %{label: "Login", secret: "s3cret"})
+      {:ok, lv, _html} = live(conn, ~p"/assets/#{asset}")
+
+      assert {:error, {:live_redirect, %{to: "/users/log-in"}}} =
+               render_hook(lv, "reveal", %{"id" => credential.id})
+    end
+
     test "deletes a credential", %{conn: conn, asset: asset} do
       {:ok, credential} = Pass.Vault.create_credential(asset, %{label: "Temp", secret: "x"})
       {:ok, lv, html} = live(conn, ~p"/assets/#{asset}")

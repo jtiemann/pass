@@ -50,19 +50,41 @@ defmodule PassWeb.UserLive.RegistrationTest do
                ~r/An email was sent to .*, please access it to confirm your account/
     end
 
-    test "renders errors for duplicated email", %{conn: conn} do
+    test "the submit itself is refused if someone registered since mount", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/users/register")
 
-      user = user_fixture(%{email: "test@email.com"})
+      # First owner registers while this visitor's page is open.
+      _first = user_fixture()
 
-      result =
-        lv
-        |> form("#registration_form",
-          user: %{"email" => user.email}
-        )
-        |> render_submit()
+      assert {:error, {:live_redirect, %{to: "/users/log-in"}}} =
+               lv
+               |> form("#registration_form", user: %{"email" => unique_user_email()})
+               |> render_submit()
+    end
+  end
 
-      assert result =~ "has already been taken"
+  describe "invite-only after bootstrap" do
+    setup do
+      %{existing: user_fixture()}
+    end
+
+    test "the registration page is closed once a user exists", %{conn: conn} do
+      assert {:error, {:redirect, %{to: "/users/log-in", flash: flash}}} =
+               live(conn, ~p"/users/register")
+
+      assert flash["error"] =~ "by invitation"
+    end
+
+    test "the login page stops advertising sign-up", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/users/log-in")
+      refute html =~ "Sign up"
+      assert html =~ "by invitation"
+    end
+
+    test "the guest landing offers login only", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/")
+      refute html =~ "Get started"
+      assert html =~ "by invitation"
     end
   end
 

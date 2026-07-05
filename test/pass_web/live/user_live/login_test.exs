@@ -14,6 +14,35 @@ defmodule PassWeb.UserLive.LoginTest do
     end
   end
 
+  describe "magic-link rate limiting" do
+    test "caps login emails per address so the server can't flood a mailbox", %{conn: conn} do
+      user = user_fixture()
+
+      submit = fn ->
+        {:ok, lv, _html} = live(conn, ~p"/users/log-in")
+
+        lv
+        |> form("#login_form_magic", user: %{email: user.email})
+        |> render_submit()
+      end
+
+      for _ <- 1..4, do: submit.()
+
+      # Only the first 3 attempts (per hour) generate a login token/email.
+      import Ecto.Query
+
+      count =
+        Pass.Repo.aggregate(
+          from(t in Pass.Accounts.UserToken,
+            where: t.user_id == ^user.id and t.context == "login"
+          ),
+          :count
+        )
+
+      assert count == 3
+    end
+  end
+
   describe "user login - magic link" do
     test "sends magic link email when user exists", %{conn: conn} do
       user = user_fixture()
